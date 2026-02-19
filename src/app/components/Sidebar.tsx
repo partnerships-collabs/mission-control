@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const navigation = [
   { name: "Overview", href: "/", icon: "🏠" },
   { name: "Projects", href: "/projects", icon: "📋" },
+  { name: "Pipeline", href: "/pipeline", icon: "🔬" },
   { name: "Cron Jobs", href: "/crons", icon: "⏰" },
   { name: "Agents", href: "/agents", icon: "🤖" },
 ];
