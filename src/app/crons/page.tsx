@@ -1,190 +1,11 @@
 'use client';
 
 import { useState } from "react";
+import { realCronJobs, type CronJob } from './real-cron-data';
 
-interface CronJob {
-  id: string;
-  name: string;
-  agent: string;
-  schedule: string;
-  lastStatus: 'success' | 'warning' | 'error';
-  lastRun: string;
-  consecutiveErrors: number;
-  errorMessage?: string;
-  duration: string;
-  nextRun: string;
-}
+// CronJob interface now imported from real-cron-data.ts
 
-const mockCronJobs: CronJob[] = [
-  {
-    id: "1",
-    name: "morning-brief",
-    agent: "Ari",
-    schedule: "0 9 * * *",
-    lastStatus: "success",
-    lastRun: "2 mins ago",
-    consecutiveErrors: 0,
-    duration: "2.3s",
-    nextRun: "Tomorrow 9:00 AM",
-  },
-  {
-    id: "2",
-    name: "email-scan",
-    agent: "Ari",
-    schedule: "*/15 * * * *",
-    lastStatus: "success",
-    lastRun: "15 mins ago",
-    consecutiveErrors: 0,
-    duration: "4.1s",
-    nextRun: "In 0 mins",
-  },
-  {
-    id: "3",
-    name: "contract-matcher",
-    agent: "Ari",
-    schedule: "0 */2 * * *",
-    lastStatus: "error",
-    lastRun: "1 hour ago",
-    consecutiveErrors: 9,
-    errorMessage: "Airtable API rate limit exceeded",
-    duration: "45.2s",
-    nextRun: "In 1 hour",
-  },
-  {
-    id: "4",
-    name: "followup-engine",
-    agent: "Arlo",
-    schedule: "0 */6 * * *",
-    lastStatus: "success",
-    lastRun: "3 hours ago",
-    consecutiveErrors: 0,
-    duration: "12.8s",
-    nextRun: "In 3 hours",
-  },
-  {
-    id: "5",
-    name: "meeting-briefs",
-    agent: "Ari",
-    schedule: "0 8 * * 1-5",
-    lastStatus: "success",
-    lastRun: "1 hour ago",
-    consecutiveErrors: 0,
-    duration: "6.7s",
-    nextRun: "Tomorrow 8:00 AM",
-  },
-  {
-    id: "6",
-    name: "creator-enrichment",
-    agent: "Arlo",
-    schedule: "0 */4 * * *",
-    lastStatus: "success",
-    lastRun: "2 hours ago",
-    consecutiveErrors: 0,
-    duration: "89.3s",
-    nextRun: "In 2 hours",
-  },
-  {
-    id: "7",
-    name: "brand-enrichment",
-    agent: "Arlo",
-    schedule: "0 */8 * * *",
-    lastStatus: "warning",
-    lastRun: "4 hours ago",
-    consecutiveErrors: 2,
-    errorMessage: "Some brand profiles incomplete",
-    duration: "34.5s",
-    nextRun: "In 4 hours",
-  },
-  {
-    id: "8",
-    name: "pipeline-watchdog",
-    agent: "Ari",
-    schedule: "*/5 * * * *",
-    lastStatus: "success",
-    lastRun: "5 mins ago",
-    consecutiveErrors: 0,
-    duration: "1.9s",
-    nextRun: "In 0 mins",
-  },
-  {
-    id: "9",
-    name: "security-watchdog",
-    agent: "Ari",
-    schedule: "*/10 * * * *",
-    lastStatus: "success",
-    lastRun: "10 mins ago",
-    consecutiveErrors: 0,
-    duration: "0.8s",
-    nextRun: "In 0 mins",
-  },
-  {
-    id: "10",
-    name: "channel-discovery",
-    agent: "Arlo",
-    schedule: "0 6 * * *",
-    lastStatus: "success",
-    lastRun: "3 hours ago",
-    consecutiveErrors: 0,
-    duration: "156.7s",
-    nextRun: "Tomorrow 6:00 AM",
-  },
-  {
-    id: "11",
-    name: "revenue-report",
-    agent: "Ari",
-    schedule: "0 7 * * 1",
-    lastStatus: "success",
-    lastRun: "2 days ago",
-    consecutiveErrors: 0,
-    duration: "23.4s",
-    nextRun: "Monday 7:00 AM",
-  },
-  {
-    id: "12",
-    name: "backup-routine",
-    agent: "Ari",
-    schedule: "0 2 * * *",
-    lastStatus: "success",
-    lastRun: "7 hours ago",
-    consecutiveErrors: 0,
-    duration: "312.1s",
-    nextRun: "Tomorrow 2:00 AM",
-  },
-  {
-    id: "13",
-    name: "deal-alerts",
-    agent: "Arlo",
-    schedule: "0 */3 * * *",
-    lastStatus: "warning",
-    lastRun: "1 hour ago",
-    consecutiveErrors: 1,
-    errorMessage: "Slack webhook timeout",
-    duration: "8.7s",
-    nextRun: "In 2 hours",
-  },
-  {
-    id: "14",
-    name: "heartbeat-check",
-    agent: "Ari",
-    schedule: "*/30 * * * *",
-    lastStatus: "success",
-    lastRun: "30 mins ago",
-    consecutiveErrors: 0,
-    duration: "0.3s",
-    nextRun: "In 0 mins",
-  },
-  {
-    id: "15",
-    name: "cleanup-logs",
-    agent: "Ari",
-    schedule: "0 1 * * 0",
-    lastStatus: "success",
-    lastRun: "3 days ago",
-    consecutiveErrors: 0,
-    duration: "45.9s",
-    nextRun: "Sunday 1:00 AM",
-  },
-];
+// Real cron data is imported from real-cron-data.ts
 
 type SortField = keyof CronJob;
 type SortDirection = 'asc' | 'desc';
@@ -203,7 +24,7 @@ export default function CronsPage() {
     }
   };
 
-  const filteredAndSortedJobs = mockCronJobs
+  const filteredAndSortedJobs = realCronJobs
     .filter(job => filterAgent === '' || job.agent === filterAgent)
     .sort((a, b) => {
       const aVal = a[sortField];
@@ -239,6 +60,7 @@ export default function CronsPage() {
           <option value="">All Agents</option>
           <option value="Ari">Ari</option>
           <option value="Arlo">Arlo</option>
+          <option value="Axel">Axel</option>
         </select>
       </div>
 

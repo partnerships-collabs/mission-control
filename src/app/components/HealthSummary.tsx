@@ -1,6 +1,8 @@
 export function HealthSummary() {
-  const cronHealthy = 43;
-  const cronTotal = 50;
+  const cronHealthy = 32;
+  const cronTotal = 66;
+  const cronErrors = 18;
+  const cronIdle = 16;
   const healthPercentage = Math.round((cronHealthy / cronTotal) * 100);
 
   return (
@@ -22,7 +24,7 @@ export function HealthSummary() {
             <span className="text-sm text-zinc-300">Cron Health</span>
           </div>
           <span className="text-sm font-medium text-zinc-300">
-            {cronHealthy}/{cronTotal} ({healthPercentage}%)
+            {cronHealthy}/{cronTotal} ({healthPercentage}\u0025)
           </span>
         </div>
 
@@ -39,11 +41,11 @@ export function HealthSummary() {
             <div className="text-xs text-zinc-400">Healthy</div>
           </div>
           <div className="text-center">
-            <div className="text-lg font-semibold text-yellow-400">{cronTotal - cronHealthy - 2}</div>
-            <div className="text-xs text-zinc-400">Warning</div>
+            <div className="text-lg font-semibold text-yellow-400">{cronIdle}</div>
+            <div className="text-xs text-zinc-400">Idle</div>
           </div>
           <div className="text-center">
-            <div className="text-lg font-semibold text-red-400">2</div>
+            <div className="text-lg font-semibold text-red-400">{cronErrors}</div>
             <div className="text-xs text-zinc-400">Error</div>
           </div>
         </div>

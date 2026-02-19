@@ -30,25 +30,41 @@ const agents: Agent[] = [
     role: "main ops",
     workspacePath: "/Users/aurora/.openclaw/workspace",
     status: "healthy",
-    uptime: "99.2%",
+    uptime: "99.2\u0025",
     lastActivity: "2 mins ago",
     assignedCrons: [
-      "morning-brief",
-      "email-scan", 
+      "Daily 7am Morning Brief for Apple",
+      "apple-email-scan",
       "contract-matcher",
-      "meeting-briefs",
-      "pipeline-watchdog",
+      "creator-enrichment-1am",
+      "brand-db-enrich-1",
       "security-watchdog",
-      "revenue-report",
-      "backup-routine",
-      "heartbeat-check",
-      "cleanup-logs"
+      "aaron-daily-briefing",
+      "daily-backup",
+      "agentio-pipeline-watchdog",
+      "80K Discovery Checkpoint",
+      "memory-filing",
+      "email-check-9am",
+      "aaron-typo-roast",
+      "email-check-1pm",
+      "email-check-6pm",
+      "nightly-tier-classification",
+      "api-cost-monitor",
+      "weekly-read-later-digest",
+      "Weekly Feature Requests Digest",
+      "weekly-avg-views-update",
+      "weekly-security-audit",
+      "weekly-sponsorship-monitor",
+      "context-pruning",
+      "weekly-creator-drought-monitor",
+      "monthly-email-draft",
+      "reengagement-check"
     ],
     stats: {
-      cronJobsManaged: 10,
-      successRate: "97.3%",
-      avgResponseTime: "1.2s",
-      memoryUsage: "2.1GB",
+      cronJobsManaged: 52,
+      successRate: "61.5\u0025",
+      avgResponseTime: "45.2s",
+      memoryUsage: "2.8GB",
     },
   },
   {
@@ -57,22 +73,50 @@ const agents: Agent[] = [
     icon: "📊",
     model: "Sonnet 4",
     role: "sales",
-    workspacePath: "/Users/aurora/.openclaw/workspace",
+    workspacePath: "/Users/aurora/.openclaw/workspaces/arlo",
     status: "healthy",
-    uptime: "98.7%",
+    uptime: "98.7\u0025",
     lastActivity: "5 mins ago",
     assignedCrons: [
+      "daily-meeting-briefs",
+      "arlo-memory-filing",
       "followup-engine",
-      "creator-enrichment",
-      "brand-enrichment",
-      "channel-discovery",
-      "deal-alerts"
+      "arlo-heartbeat",
+      "arlo-daily-digest",
+      "followup-weekly-summary",
+      "arlo-context-pruning",
+      "cross-sell-weekly"
     ],
     stats: {
-      cronJobsManaged: 5,
-      successRate: "94.8%",
-      avgResponseTime: "3.7s",
-      memoryUsage: "1.8GB",
+      cronJobsManaged: 8,
+      successRate: "87.5\u0025",
+      avgResponseTime: "18.3s",
+      memoryUsage: "1.2GB",
+    },
+  },
+  {
+    id: "axel",
+    name: "Axel",
+    icon: "⚡",
+    model: "Sonnet 4",
+    role: "dev",
+    workspacePath: "/Users/aurora/.openclaw/workspaces/axel",
+    status: "healthy",
+    uptime: "97.8\u0025",
+    lastActivity: "8 mins ago",
+    assignedCrons: [
+      "axel-security-check",
+      "axel-build-health",
+      "axel-github-watch",
+      "axel-memory-filing",
+      "axel-morning-standup",
+      "axel-context-pruning"
+    ],
+    stats: {
+      cronJobsManaged: 6,
+      successRate: "16.7\u0025",
+      avgResponseTime: "0.5s",
+      memoryUsage: "0.8GB",
     },
   },
 ];
@@ -221,7 +265,7 @@ export default function AgentsPage() {
             <div className="text-sm text-zinc-400">Total Cron Jobs</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-green-400">98.9%</div>
+            <div className="text-2xl font-bold text-green-400">98.6\u0025</div>
             <div className="text-sm text-zinc-400">Overall Uptime</div>
           </div>
         </div>

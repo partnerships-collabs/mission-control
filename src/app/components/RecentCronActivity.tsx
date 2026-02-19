@@ -1,15 +1,15 @@
 export function RecentCronActivity() {
   const recentRuns = [
-    { name: "morning-brief", agent: "Ari", status: "success", time: "09:00", duration: "2.3s" },
-    { name: "email-scan", agent: "Ari", status: "success", time: "08:45", duration: "4.1s" },
-    { name: "followup-engine", agent: "Arlo", status: "success", time: "08:30", duration: "12.8s" },
-    { name: "contract-matcher", agent: "Ari", status: "error", time: "08:15", duration: "45.2s" },
-    { name: "meeting-briefs", agent: "Ari", status: "success", time: "08:00", duration: "6.7s" },
-    { name: "creator-enrichment", agent: "Arlo", status: "success", time: "07:45", duration: "89.3s" },
-    { name: "brand-enrichment", agent: "Arlo", status: "warning", time: "07:30", duration: "34.5s" },
-    { name: "pipeline-watchdog", agent: "Ari", status: "success", time: "07:15", duration: "1.9s" },
-    { name: "security-watchdog", agent: "Ari", status: "success", time: "07:00", duration: "0.8s" },
-    { name: "channel-discovery", agent: "Arlo", status: "success", time: "06:45", duration: "156.7s" },
+    { name: "agentio-pipeline-watchdog", agent: "Ari", status: "error", time: "4m ago", duration: "0.0s" },
+    { name: "creator-airtable-sync", agent: "Ari", status: "error", time: "5m ago", duration: "0.0s" },
+    { name: "security-watchdog", agent: "Ari", status: "error", time: "5m ago", duration: "0.0s" },
+    { name: "contract-matcher", agent: "Ari", status: "error", time: "5m ago", duration: "0.0s" },
+    { name: "80K Discovery Checkpoint", agent: "Ari", status: "success", time: "6m ago", duration: "3.6s" },
+    { name: "nightly-tier-classification", agent: "Ari", status: "error", time: "6m ago", duration: "0.0s" },
+    { name: "Channel Analysis Queue", agent: "Ari", status: "success", time: "11m ago", duration: "95.1s" },
+    { name: "local-model-dispatcher", agent: "Ari", status: "error", time: "15m ago", duration: "0.0s" },
+    { name: "new-creator-monitor", agent: "Ari", status: "error", time: "21m ago", duration: "0.0s" },
+    { name: "inbound-email-monitor", agent: "Ari", status: "error", time: "41m ago", duration: "0.0s" },
   ];
 
   return (
