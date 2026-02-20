@@ -10,6 +10,7 @@ const navigation = [
   { name: "Cron Jobs", href: "/crons", icon: "⏰" },
   { name: "Agents", href: "/agents", icon: "🤖" },
   { name: "Calendar", href: "/calendar", icon: "📅" },
+  { name: "Infrastructure", href: "/infrastructure", icon: "🖥️" },
 ];
 
 export function Sidebar() {
