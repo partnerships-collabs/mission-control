@@ -11,6 +11,7 @@ const navigation = [
   { name: "Agents", href: "/agents", icon: "🤖" },
   { name: "Calendar", href: "/calendar", icon: "📅" },
   { name: "Infrastructure", href: "/infrastructure", icon: "🖥️" },
+  { name: "Blacklisted Domains", href: "/blacklisted-domains", icon: "🚫" },
 ];
 
 export function Sidebar() {
