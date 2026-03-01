@@ -63,7 +63,7 @@
 **Description:** In `src/app/pipeline/page.tsx`, the `topStats` array (Channels "42,214", Videos "2,178,548", Brands "38,987", API Cost "$600") and all stage stats throughout are hardcoded. The TopBrandsTable correctly fetches from `/api/sponsors` — good. But the rest is static. Either create an API route `/api/pipeline` that returns current stats, or document these as point-in-time snapshots with a "Last updated" date. The Sponsor Detection stage note "Waiting for fine-tuned model" is outdated.
 **Files:** `src/app/pipeline/page.tsx`, optionally new `src/app/api/pipeline/route.ts`
 **Success looks like:** Pipeline stats update dynamically or clearly show last-updated date. Outdated notes removed.
-**Status:** Escalated
+**Status:** In Progress
 
 ---
 
