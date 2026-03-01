@@ -53,7 +53,7 @@
 **Description:** In `src/app/agents/page.tsx`, multiple data issues: (1) Agent stats are hardcoded — cronJobsManaged counts, successRate, avgResponseTime, memoryUsage are all fabricated. Compute cronJobsManaged and successRate from `realCronJobs` by filtering on agent name. Remove avgResponseTime and memoryUsage if we can't source them. (2) `mockStandupData` is completely fake with date "2026-02-19" and fabricated standup items. Either fetch real standup data from an API or show "No standup data available" rather than fake data. (3) `pastStandupDates` is a hardcoded array of fake dates with no click functionality. (4) Model listed as "Opus 4.6" for Ari — should be "Sonnet 4.6". (5) Uptime percentages are fabricated.
 **Files:** `src/app/agents/page.tsx`
 **Success looks like:** Agent stats computed from real cron data. Standup shows real or no data. No fabricated numbers.
-**Status:** Escalated
+**Status:** In Progress
 
 ---
 
