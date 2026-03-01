@@ -1,16 +1,28 @@
+import { cronJobs } from '../data/real-cron-data';
+
 export function RecentCronActivity() {
-  const recentRuns = [
-    { name: "fathom-pipeline-checker", agent: "arlo", ranAt: "8m ago", duration: "11.2s", status: "ok" },
-    { name: "fathom-proposal-writer", agent: "arlo", ranAt: "23m ago", duration: "6.5s", status: "ok" },
-    { name: "needs-apple-sync", agent: "main", ranAt: "26m ago", duration: "7.4s", status: "ok" },
-    { name: "cron-error-alert", agent: "main", ranAt: "26m ago", duration: "16.0s", status: "ok" },
-    { name: "inbound-email-monitor", agent: "main", ranAt: "27m ago", duration: "42.7s", status: "ok" },
-    { name: "ari-heartbeat", agent: "main", ranAt: "27m ago", duration: "35.8s", status: "ok" },
-    { name: "axel-heartbeat", agent: "axel", ranAt: "37m ago", duration: "18.0m", status: "error" },
-    { name: "arlo-heartbeat", agent: "arlo", ranAt: "38m ago", duration: "17.1s", status: "ok" },
-    { name: "axel-github-watch", agent: "axel", ranAt: "38m ago", duration: "9.3s", status: "ok" },
-    { name: "axel-build-health", agent: "axel", ranAt: "38m ago", duration: "5.4s", status: "ok" },
-  ];
+  const recentRuns = cronJobs
+    .sort((a, b) => new Date(b.lastRun).getTime() - new Date(a.lastRun).getTime())
+    .slice(0, 10)
+    .map(job => ({
+      name: job.name,
+      agent: job.agent,
+      ranAt: formatTimeAgo(new Date(job.lastRun)),
+      duration: job.duration,
+      status: job.lastStatus
+    }));
+
+  function formatTimeAgo(date: Date): string {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+
+    if (diffMins < 60) {
+      return `${diffMins}m ago`;
+    }
+    const diffHours = Math.floor(diffMins / 60);
+    return `${diffHours}h ago`;
+  }
 
   return (
     <div className="bg-zinc-800 border border-zinc-700 rounded-lg">
