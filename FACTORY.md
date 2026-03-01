@@ -43,7 +43,7 @@
 **Description:** In `src/app/components/RecentCronActivity.tsx`, the `recentRuns` array is completely hardcoded with fake data (e.g., "fathom-pipeline-checker ran 8m ago"). This should pull from the same real cron data in `real-cron-data.ts` — sort by `lastRun` to show the 10 most recent, and use the real `lastStatus`, `duration`, and `agent` fields.
 **Files:** `src/app/components/RecentCronActivity.tsx`
 **Success looks like:** Recent cron runs table shows actual recent runs matching the Crons page data.
-**Status:** Escalated
+**Status:** In Progress
 
 ---
 
