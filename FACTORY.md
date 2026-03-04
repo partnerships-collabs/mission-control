@@ -33,7 +33,7 @@
 **Description:** In `src/app/components/PipelineStats.tsx`, all four stats are hardcoded: Channels "41,821" (real is 42,214), Videos "1.83M" (real is 2,178,548), Brands "12,847" (real is 38,987), Active Deals "328" (fabricated). The percentage changes ("+2.3%", "+5.7%", etc.) are also fabricated. Either fetch from the same data source as the pipeline page, or import the pipeline page's `topStats` array. Remove fake percentage changes — show nothing or "—" if we can't compute real deltas. Fix "Brands Matched" to show the real count of 38,987. "Active Deals" should either pull from Copper API or be removed entirely.
 **Files:** `src/app/components/PipelineStats.tsx`
 **Success looks like:** Pipeline stats on home page match pipeline page numbers exactly. No fabricated percentages.
-**Status:** Escalated
+**Status:** In Progress
 
 ---
 
