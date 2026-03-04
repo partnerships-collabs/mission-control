@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { topStats, PIPELINE_LAST_UPDATED } from "@/app/pipeline/pipeline-data";
 
 // ── Top Brands Table ─────────────────────────────────────────────────────────
 interface SponsorRow {
@@ -148,13 +149,6 @@ interface PipelineStage {
   note?: string;
 }
 
-const topStats = [
-  { label: "Channels", value: "42,214" },
-  { label: "Videos", value: "2,178,548" },
-  { label: "Brands", value: "38,987" },
-  { label: "API Cost", value: "$600" },
-];
-
 const stages: PipelineStage[] = [
   {
     num: "01", name: "Channel Discovery", status: "Active",
@@ -194,7 +188,6 @@ const stages: PipelineStage[] = [
       { label: "Sponsored Videos", value: "187,915" },
       { label: "Brand Mentions", value: "375,646" },
     ],
-    note: "Waiting for fine-tuned model",
   },
   {
     num: "07", name: "Brand Normalization", status: "Complete",
@@ -235,9 +228,14 @@ const statusDot: Record<StageStatus, string> = {
 export default function PipelinePage() {
   return (
     <div className="p-6 lg:p-8 max-w-7xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-100">Pipeline Dashboard</h1>
-        <p className="text-sm text-slate-500 mt-1">Sponsor detection pipeline</p>
+      <div className="flex items-start justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-100">Pipeline Dashboard</h1>
+          <p className="text-sm text-slate-500 mt-1">Sponsor detection pipeline</p>
+        </div>
+        <span className="text-xs text-slate-500 mt-1">
+          Last updated: {PIPELINE_LAST_UPDATED}
+        </span>
       </div>
 
       {/* Top stats */}

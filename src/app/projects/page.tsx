@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 interface Project {
   id: string;
@@ -12,54 +12,6 @@ interface Project {
   link?: string;
 }
 
-const projects: Project[] = [
-  {
-    id: "mission-control-v2",
-    name: "Mission Control v2",
-    status: "In Progress",
-    owner: "Axel",
-    description: "Apple's morning command center — Phase 1 build with home page, activity feed, projects.",
-  },
-  {
-    id: "inbound-email-engine",
-    name: "Inbound Email Engine",
-    status: "Blocked",
-    owner: "Ari",
-    description: "Creator identification, brand research, agent assignment, email drafting — all built and tested.",
-    blockingReason: "Needs gmail.send scope added to service account",
-  },
-  {
-    id: "ventures-playbook",
-    name: "Ventures Playbook",
-    status: "Done",
-    owner: "Axel",
-    description: "In-person ventures playbook site. Deployed and live.",
-    link: "https://ventures-playbook.vercel.app",
-  },
-  {
-    id: "label-cleaning",
-    name: "Label Cleaning",
-    status: "Blocked",
-    owner: "Axel",
-    description: "Sponsor label normalization — 88% complete.",
-    blockingReason: "API key issue blocking remaining 12%",
-  },
-  {
-    id: "channel-discovery",
-    name: "Channel Discovery",
-    status: "In Progress",
-    owner: "Axel",
-    description: "Perpetual yt-dlp discovery engine on Mini. 100K+ candidates, 27 niches, always running.",
-  },
-  {
-    id: "sponsor-detection-v5",
-    name: "Sponsor Detection v5",
-    status: "On Hold",
-    owner: "Apple",
-    description: "Next-gen sponsor detection model. Paused per Apple directive (Feb 19).",
-  },
-];
-
 const statusConfig: Record<string, { bg: string; text: string; border: string; dot: string }> = {
   "In Progress": { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/20", dot: "bg-emerald-400" },
   "Blocked": { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/20", dot: "bg-red-400" },
@@ -68,6 +20,15 @@ const statusConfig: Record<string, { bg: string; text: string; border: string; d
 };
 
 export default function ProjectsPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  useEffect(() => {
+    fetch('/data/projects.json')
+      .then(r => r.json())
+      .then(setProjects)
+      .catch(() => setProjects([]));
+  }, []);
+
   const statusCounts = projects.reduce((acc, p) => {
     acc[p.status] = (acc[p.status] || 0) + 1;
     return acc;

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "mission-control-v2",
+    "name": "Mission Control v2",
+    "status": "In Progress",
+    "owner": "Axel",
+    "description": "Apple's morning command center — Phase 1 build with home page, activity feed, projects."
+  },
+  {
+    "id": "sponsor-detection-v5",
+    "name": "Sponsor Detection v5",
+    "status": "On Hold",
+    "owner": "Apple",
+    "description": "Next-gen sponsor detection model. Paused per Apple directive."
+  },
+  {
+    "id": "inbound-email-engine",
+    "name": "Inbound Email Engine",
+    "status": "Blocked",
+    "owner": "Ari",
+    "description": "Creator identification, brand research, agent assignment, email drafting — all built and tested.",
+    "blockingReason": "Needs gmail.send scope added to service account"
+  },
+  {
+    "id": "ventures-playbook",
+    "name": "Ventures Playbook",
+    "status": "Done",
+    "owner": "Axel",
+    "description": "In-person ventures playbook site. Deployed and live.",
+    "link": "https://ventures-playbook.vercel.app"
+  },
+  {
+    "id": "channel-discovery",
+    "name": "Channel Discovery",
+    "status": "In Progress",
+    "owner": "Axel",
+    "description": "Perpetual yt-dlp discovery engine on Mini. 100K+ candidates, 27 niches, always running."
+  },
+  {
+    "id": "label-cleaning",
+    "name": "Label Cleaning",
+    "status": "Blocked",
+    "owner": "Axel",
+    "description": "Sponsor label normalization — 88% complete.",
+    "blockingReason": "API key issue blocking remaining 12%"
+  }
+]
