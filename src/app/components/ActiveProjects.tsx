@@ -1,20 +1,17 @@
+'use client';
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 interface Project {
+  id: string;
   name: string;
   status: "In Progress" | "Blocked" | "Done" | "On Hold";
   owner: string;
+  description?: string;
   detail?: string;
+  blockingReason?: string;
 }
-
-const projects: Project[] = [
-  { name: "Mission Control v2", status: "In Progress", owner: "Axel", detail: "Phase 1 build" },
-  { name: "Inbound Email Engine", status: "Blocked", owner: "Ari", detail: "Needs gmail.send scope" },
-  { name: "Ventures Playbook", status: "Done", owner: "Axel" },
-  { name: "Label Cleaning", status: "Blocked", owner: "Axel", detail: "88% done, API key issue" },
-  { name: "Channel Discovery", status: "In Progress", owner: "Axel", detail: "Perpetual, Mini" },
-  { name: "Sponsor Detection v5", status: "On Hold", owner: "Apple", detail: "Apple directive" },
-];
 
 const statusConfig = {
   "In Progress": { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/20", dot: "bg-emerald-400" },
@@ -31,6 +28,15 @@ const columns: Array<{ label: string; status: Project["status"] }> = [
 ];
 
 export function ActiveProjects() {
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  useEffect(() => {
+    fetch('/data/projects.json')
+      .then(r => r.json())
+      .then((data: Project[]) => setProjects(data))
+      .catch(() => setProjects([]));
+  }, []);
+
   return (
     <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5">
       <div className="flex items-center justify-between mb-4">
@@ -54,13 +60,15 @@ export function ActiveProjects() {
               <div className="space-y-2">
                 {colProjects.map((p) => (
                   <div
-                    key={p.name}
+                    key={p.id || p.name}
                     className={`rounded-lg border p-3 ${cfg.bg} ${cfg.border}`}
                   >
                     <div className="text-sm font-medium text-slate-200">{p.name}</div>
                     <div className="text-xs text-slate-500 mt-1">{p.owner}</div>
-                    {p.detail && (
-                      <div className={`text-xs mt-1 ${cfg.text} opacity-80`}>{p.detail}</div>
+                    {(p.detail || p.blockingReason) && (
+                      <div className={`text-xs mt-1 ${cfg.text} opacity-80`}>
+                        {p.detail || p.blockingReason}
+                      </div>
                     )}
                   </div>
                 ))}

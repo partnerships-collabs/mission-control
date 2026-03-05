@@ -1,7 +1,18 @@
 'use client';
 
-import { useState } from "react";
-import { realCronJobs } from "@/app/crons/real-cron-data";
+import { useState, useEffect } from "react";
+
+interface CronJob {
+  id: string;
+  name: string;
+  agent: string;
+  schedule: string;
+  lastStatus: 'success' | 'warning' | 'error';
+  lastRun: string;
+  consecutiveErrors: number;
+  duration: string;
+  nextRun: string;
+}
 
 interface CalendarJob {
   name: string;
@@ -26,19 +37,15 @@ const agents: Agent[] = [
 
 // Parse a cron schedule string and return the primary hours it fires (0-23)
 function parseHours(schedule: string): number[] {
-  // "every Xm" or "every Xh" — show at 0 (midnight slot) as fallback for now, skip
   if (schedule.startsWith("every")) return [];
+  if (schedule === "—") return [];
 
   const parts = schedule.trim().split(/\s+/);
   if (parts.length < 5) return [];
 
-  const minutePart = parts[0];
-  const hourPart   = parts[1];
-
-  // If hourPart is * or */X, skip (too many slots)
+  const hourPart = parts[1];
   if (hourPart === "*") return [];
 
-  // Handle step: */6 -> 0,6,12,18
   if (hourPart.startsWith("*/")) {
     const step = parseInt(hourPart.slice(2), 10);
     if (isNaN(step)) return [];
@@ -47,50 +54,55 @@ function parseHours(schedule: string): number[] {
     return result;
   }
 
-  // Handle range: 8-22
   if (hourPart.includes("-") && !hourPart.includes(",")) {
-    const [start, end] = hourPart.split("-").map(Number);
-    // Only show first and last to avoid flooding
+    const start = parseInt(hourPart.split("-")[0], 10);
     return [start];
   }
 
-  // Handle comma list: 8,10,12,14
   if (hourPart.includes(",")) {
     return hourPart.split(",").map(Number).filter(n => !isNaN(n));
   }
 
-  // Single hour
   const h = parseInt(hourPart, 10);
   if (isNaN(h)) return [];
-
-  // Also factor in minute offset for display (just hour)
-  const m = parseInt(minutePart, 10);
-  void m; // we show only the hour slot
   return [h];
 }
 
-// Derive calendar jobs from realCronJobs
-const cronJobs: CalendarJob[] = [];
-for (const job of realCronJobs) {
-  const agentId = job.agent.toLowerCase() as 'ari' | 'arlo' | 'axel';
-  if (!['ari', 'arlo', 'axel'].includes(agentId)) continue;
-  const hours = parseHours(job.schedule);
-  for (const h of hours) {
-    cronJobs.push({
-      name: job.name,
-      time: h.toString().padStart(2, '0') + ':00',
-      agent: agentId,
-      frequency: job.schedule,
-    });
+function buildCalendarJobs(cronJobs: CronJob[]): CalendarJob[] {
+  const result: CalendarJob[] = [];
+  for (const job of cronJobs) {
+    const agentId = job.agent.toLowerCase() as 'ari' | 'arlo' | 'axel';
+    if (!['ari', 'arlo', 'axel'].includes(agentId)) continue;
+    const hours = parseHours(job.schedule);
+    for (const h of hours) {
+      result.push({
+        name: job.name,
+        time: h.toString().padStart(2, '0') + ':00',
+        agent: agentId,
+        frequency: job.schedule,
+      });
+    }
   }
+  return result;
 }
 
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-const hours = Array.from({ length: 16 }, (_, i) => i + 6); // 6am to 10pm (21)
+const hours = Array.from({ length: 16 }, (_, i) => i + 6); // 6am to 9pm
 
 export default function CalendarPage() {
+  const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
+  const [loading, setLoading] = useState(true);
   const [compactMode, setCompactMode] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/crons')
+      .then(r => r.json())
+      .then((data: CronJob[]) => { setCronJobs(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const calendarJobs = buildCalendarJobs(cronJobs);
 
   const formatHour = (hour: number) => {
     if (hour === 0) return '12 AM';
@@ -101,7 +113,7 @@ export default function CalendarPage() {
 
   const getJobsForTimeSlot = (hour: number) => {
     const hourStr = hour.toString().padStart(2, '0') + ':00';
-    return cronJobs.filter(job => job.time === hourStr);
+    return calendarJobs.filter(job => job.time === hourStr);
   };
 
   const getAgentColor = (agentId: string, opacity = 100) => {
@@ -111,12 +123,23 @@ export default function CalendarPage() {
     return `bg-${agent.color}-500${opacityMap[opacity]}`;
   };
 
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-slate-100">Team Calendar</h2>
+        <div className="bg-slate-800 border border-slate-700 rounded-lg p-8 text-center text-slate-500">
+          Loading cron schedule…
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-100">Team Calendar</h2>
-          <p className="text-sm text-slate-400 mt-1">Agent cron job schedules</p>
+          <p className="text-sm text-slate-400 mt-1">Agent cron job schedules · {cronJobs.length} jobs</p>
         </div>
         <button
           onClick={() => setCompactMode(!compactMode)}
@@ -205,7 +228,7 @@ export default function CalendarPage() {
                           {filteredHourJobs.map((job, index) => (
                             <div
                               key={index}
-                              className={`${getAgentColor(job.agent, 75)} border ${getAgentColor(job.agent)} border-opacity-50 rounded px-2 py-1 text-xs text-slate-900 font-medium cursor-pointer hover:opacity-80 transition-opacity`}
+                              className={`${getAgentColor(job.agent, 75)} rounded px-2 py-1 text-xs text-slate-900 font-medium cursor-pointer hover:opacity-80 transition-opacity`}
                               title={`${agents.find(a => a.id === job.agent)?.emoji} ${job.name} · ${job.frequency}`}
                             >
                               <div className="truncate">
@@ -229,7 +252,8 @@ export default function CalendarPage() {
         <h3 className="text-lg font-semibold text-slate-100 mb-4">Schedule Summary</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {agents.map((agent) => {
-            const agentJobs = realCronJobs.filter(j => j.agent.toLowerCase() === agent.id);
+            const agentJobs = cronJobs.filter(j => j.agent.toLowerCase() === agent.id);
+            const errorCount = agentJobs.filter(j => j.consecutiveErrors >= 3).length;
             return (
               <div key={agent.id} className="bg-slate-900 border border-slate-700 rounded-lg p-4">
                 <div className="flex items-center space-x-2 mb-3">
@@ -242,6 +266,12 @@ export default function CalendarPage() {
                     <span className="text-slate-400">Total Jobs:</span>
                     <span className="text-slate-300 font-medium">{agentJobs.length}</span>
                   </div>
+                  {errorCount > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Errors:</span>
+                      <span className="text-red-400 font-medium">{errorCount}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             );

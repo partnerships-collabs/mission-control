@@ -1,14 +1,14 @@
-import Link from "next/link";
-import { realCronJobs } from "../crons/real-cron-data";
+'use client';
 
-function computeCronHealth(): { status: "green" | "yellow" | "red"; label: string } {
-  const errorCount = realCronJobs.filter(
-    (j) => j.lastStatus === "error" || j.consecutiveErrors >= 3
-  ).length;
-  if (errorCount > 5) return { status: "red", label: `${errorCount} errors` };
-  if (errorCount >= 1) return { status: "yellow", label: `${errorCount} warning${errorCount > 1 ? "s" : ""}` };
-  return { status: "green", label: "All healthy" };
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+interface CronJob {
+  lastStatus: string;
+  consecutiveErrors: number;
 }
+
+type HealthStatus = "green" | "yellow" | "red";
 
 const statusColors = {
   green: { dot: "bg-emerald-400", text: "text-emerald-400", bg: "bg-emerald-500/5 border-emerald-500/20" },
@@ -17,13 +17,33 @@ const statusColors = {
 };
 
 export function SystemHealth() {
-  const cronHealth = computeCronHealth();
+  const [cronHealth, setCronHealth] = useState<{ status: HealthStatus; label: string }>({ status: "green", label: "Loading…" });
+  const [agentCount, setAgentCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    // Fetch cron health
+    fetch('/api/crons')
+      .then(r => r.json())
+      .then((jobs: CronJob[]) => {
+        const errorCount = jobs.filter(j => j.lastStatus === "error" || j.consecutiveErrors >= 3).length;
+        if (errorCount > 5) setCronHealth({ status: "red", label: `${errorCount} errors` });
+        else if (errorCount >= 1) setCronHealth({ status: "yellow", label: `${errorCount} warning${errorCount > 1 ? "s" : ""}` });
+        else setCronHealth({ status: "green", label: "All healthy" });
+      })
+      .catch(() => setCronHealth({ status: "yellow", label: "Unknown" }));
+
+    // Fetch agent count
+    fetch('/api/agents')
+      .then(r => r.json())
+      .then((agents: unknown[]) => setAgentCount(agents.length))
+      .catch(() => setAgentCount(3));
+  }, []);
 
   const indicators = [
     {
       name: "Agents",
-      status: "green" as const,
-      label: "3 active",
+      status: "green" as HealthStatus,
+      label: agentCount !== null ? `${agentCount} active` : "Loading…",
       href: "/agents",
     },
     {
@@ -34,7 +54,7 @@ export function SystemHealth() {
     },
     {
       name: "Infrastructure",
-      status: "green" as const,
+      status: "green" as HealthStatus,
       label: "Online",
       href: "/infrastructure",
     },

@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { topStats, PIPELINE_LAST_UPDATED } from "@/app/pipeline/pipeline-data";
 
 // ── Top Brands Table ─────────────────────────────────────────────────────────
 interface SponsorRow {
@@ -225,7 +224,19 @@ const statusDot: Record<StageStatus, string> = {
   Complete: "bg-blue-400",
 };
 
+interface PipelineStatEntry { label: string; value: string; }
+interface PipelineStatsData { topStats: PipelineStatEntry[]; lastUpdated: string; }
+
 export default function PipelinePage() {
+  const [pipeStats, setPipeStats] = React.useState<PipelineStatsData | null>(null);
+
+  React.useEffect(() => {
+    fetch('/api/pipeline-stats')
+      .then(r => r.json())
+      .then(setPipeStats)
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="p-6 lg:p-8 max-w-7xl space-y-6">
       <div className="flex items-start justify-between flex-wrap gap-2">
@@ -234,13 +245,13 @@ export default function PipelinePage() {
           <p className="text-sm text-slate-500 mt-1">Sponsor detection pipeline</p>
         </div>
         <span className="text-xs text-slate-500 mt-1">
-          Last updated: {PIPELINE_LAST_UPDATED}
+          Last updated: {pipeStats?.lastUpdated || "—"}
         </span>
       </div>
 
       {/* Top stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {topStats.map((s) => (
+        {(pipeStats?.topStats || []).map((s) => (
           <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-center">
             <div className="text-2xl font-bold tracking-tight">{s.value}</div>
             <div className="text-xs text-slate-500 mt-1">{s.label}</div>

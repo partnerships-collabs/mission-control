@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useState } from "react";
+
 interface Process {
   pid: number;
   name: string;
@@ -25,56 +27,10 @@ interface Host {
   topProcesses: Process[];
 }
 
-const hosts: Host[] = [
-  {
-    name: "mac-studio",
-    label: "Mac Studio",
-    emoji: "🖥️",
-    online: true,
-    ip: "100.98.50.42",
-    cpuPct: 18,
-    memUsedGb: 42.1,
-    memTotalGb: 64,
-    ollamaRunning: true,
-    ollamaLoadedModels: ["llama3.3:70b", "nomic-embed-text"],
-    activeProcesses: 14,
-    diskUsedGb: 312,
-    diskTotalGb: 460,
-    topProcesses: [
-      { pid: 1842, name: "ollama", cpu: 28.4, mem: 14.2, memMb: 9088 },
-      { pid: 3201, name: "python3 mission_control_collector.py", cpu: 6.1, mem: 1.4, memMb: 896 },
-      { pid: 2980, name: "node (openclaw)", cpu: 4.8, mem: 2.1, memMb: 1344 },
-      { pid: 4410, name: "python3 revenue_collector.py", cpu: 3.2, mem: 0.9, memMb: 576 },
-      { pid: 1204, name: "python3 sponsor_pipeline.py", cpu: 2.7, mem: 1.8, memMb: 1152 },
-      { pid: 5512, name: "node (webhook-server)", cpu: 1.4, mem: 1.1, memMb: 704 },
-      { pid: 6001, name: "python3 memory_filing_cron.py", cpu: 0.8, mem: 0.6, memMb: 384 },
-      { pid: 7300, name: "launchd", cpu: 0.2, mem: 0.1, memMb: 64 },
-    ],
-  },
-  {
-    name: "mac-mini",
-    label: "Mac Mini",
-    emoji: "🖥️",
-    online: true,
-    ip: "100.104.197.44",
-    cpuPct: 8,
-    memUsedGb: 9.4,
-    memTotalGb: 16,
-    ollamaRunning: false,
-    ollamaLoadedModels: [],
-    activeProcesses: 6,
-    diskUsedGb: 88,
-    diskTotalGb: 200,
-    topProcesses: [
-      { pid: 812, name: "node (brand-match-app)", cpu: 5.2, mem: 3.8, memMb: 608 },
-      { pid: 1003, name: "node (media-kits-app)", cpu: 2.1, mem: 2.4, memMb: 384 },
-      { pid: 1240, name: "node (openclaw)", cpu: 1.8, mem: 1.6, memMb: 256 },
-      { pid: 2100, name: "python3 webhook_server.py", cpu: 0.9, mem: 0.8, memMb: 128 },
-      { pid: 3050, name: "python3 adsbymoney_scraper.py", cpu: 0.4, mem: 0.6, memMb: 96 },
-      { pid: 4400, name: "launchd", cpu: 0.1, mem: 0.1, memMb: 32 },
-    ],
-  },
-];
+interface InfraData {
+  hosts: Host[];
+  updatedAt: string;
+}
 
 function cpuColor(cpu: number): string {
   if (cpu >= 20) return "text-red-400";
@@ -94,17 +50,67 @@ function diskBarColor(pct: number): string {
   return "bg-blue-500";
 }
 
+function formatUpdated(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+}
+
 export default function InfrastructurePage() {
+  const [data, setData] = useState<InfraData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/infrastructure')
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((d: InfraData) => { setData(d); setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="p-6 lg:p-8 max-w-7xl">
+        <h1 className="text-2xl font-bold text-slate-100 mb-6">Infrastructure</h1>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-500 animate-pulse">
+          Fetching live system stats…
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="p-6 lg:p-8 max-w-7xl">
+        <h1 className="text-2xl font-bold text-slate-100 mb-6">Infrastructure</h1>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-red-400">
+          Failed to load infrastructure data: {error || "Unknown error"}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 lg:p-8 max-w-7xl space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-100">Infrastructure</h1>
-        <p className="text-sm text-slate-400 mt-1">Mac Studio · Mac Mini · Live process view</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-100">Infrastructure</h1>
+          <p className="text-sm text-slate-400 mt-1">Mac Studio · Mac Mini · Live process view</p>
+        </div>
+        <span className="text-xs text-slate-500 mt-1">
+          Updated {formatUpdated(data.updatedAt)}
+        </span>
       </div>
 
-      {hosts.map((host) => {
-        const memPct = Math.round((host.memUsedGb / host.memTotalGb) * 100);
-        const diskPct = Math.round((host.diskUsedGb / host.diskTotalGb) * 100);
+      {data.hosts.map((host) => {
+        const memPct = host.memTotalGb > 0 ? Math.round((host.memUsedGb / host.memTotalGb) * 100) : 0;
+        const diskPct = host.diskTotalGb > 0 ? Math.round((host.diskUsedGb / host.diskTotalGb) * 100) : 0;
 
         return (
           <div key={host.name} className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
@@ -123,87 +129,95 @@ export default function InfrastructurePage() {
                 </div>
               </div>
 
-              {/* CPU */}
-              <div className="text-center">
-                <div className={`text-2xl font-bold ${cpuColor(host.cpuPct)}`}>{host.cpuPct}%</div>
-                <div className="text-xs text-slate-400">CPU</div>
-              </div>
+              {host.online ? (
+                <>
+                  {/* CPU */}
+                  <div className="text-center">
+                    <div className={`text-2xl font-bold ${cpuColor(host.cpuPct)}`}>{host.cpuPct}%</div>
+                    <div className="text-xs text-slate-400">CPU</div>
+                  </div>
 
-              {/* RAM */}
-              <div className="min-w-[120px]">
-                <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span>RAM</span>
-                  <span>{host.memUsedGb} / {host.memTotalGb} GB</span>
-                </div>
-                <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full ${memBarColor(memPct)}`} style={{ width: `${memPct}%` }} />
-                </div>
-                <div className="text-xs text-slate-400 mt-1 text-right">{memPct}%</div>
-              </div>
+                  {/* RAM */}
+                  <div className="min-w-[120px]">
+                    <div className="flex justify-between text-xs text-slate-400 mb-1">
+                      <span>RAM</span>
+                      <span>{host.memUsedGb} / {host.memTotalGb} GB</span>
+                    </div>
+                    <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${memBarColor(memPct)}`} style={{ width: `${memPct}%` }} />
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1 text-right">{memPct}%</div>
+                  </div>
 
-              {/* Disk */}
-              <div className="min-w-[120px]">
-                <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span>Disk</span>
-                  <span>{host.diskUsedGb} / {host.diskTotalGb} GB</span>
-                </div>
-                <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full ${diskBarColor(diskPct)}`} style={{ width: `${diskPct}%` }} />
-                </div>
-                <div className="text-xs text-slate-400 mt-1 text-right">{diskPct}%</div>
-              </div>
+                  {/* Disk */}
+                  <div className="min-w-[120px]">
+                    <div className="flex justify-between text-xs text-slate-400 mb-1">
+                      <span>Disk</span>
+                      <span>{host.diskUsedGb} / {host.diskTotalGb} GB</span>
+                    </div>
+                    <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${diskBarColor(diskPct)}`} style={{ width: `${diskPct}%` }} />
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1 text-right">{diskPct}%</div>
+                  </div>
 
-              {/* Ollama */}
-              <div className="text-center">
-                <div className={`text-lg font-semibold ${host.ollamaRunning ? "text-emerald-400" : "text-slate-500"}`}>
-                  {host.ollamaRunning ? "🦙 Running" : "🦙 Off"}
-                </div>
-                {host.ollamaRunning && host.ollamaLoadedModels.length > 0 && (
-                  <div className="text-xs text-slate-400 mt-0.5">{host.ollamaLoadedModels.join(", ")}</div>
-                )}
-              </div>
+                  {/* Ollama */}
+                  <div className="text-center">
+                    <div className={`text-lg font-semibold ${host.ollamaRunning ? "text-emerald-400" : "text-slate-500"}`}>
+                      {host.ollamaRunning ? "🦙 Running" : "🦙 Off"}
+                    </div>
+                    {host.ollamaRunning && host.ollamaLoadedModels.length > 0 && (
+                      <div className="text-xs text-slate-400 mt-0.5">{host.ollamaLoadedModels.join(", ")}</div>
+                    )}
+                  </div>
 
-              {/* Active processes count */}
-              <div className="text-center">
-                <div className="text-2xl font-bold text-slate-200">{host.activeProcesses}</div>
-                <div className="text-xs text-slate-400">active procs</div>
-              </div>
+                  {/* Active processes count */}
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-slate-200">{host.activeProcesses}</div>
+                    <div className="text-xs text-slate-400">active procs</div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-slate-500 italic">Host unreachable</div>
+              )}
             </div>
 
             {/* Top processes table */}
-            <div>
-              <div className="px-5 py-3 flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-300">Top Processes by CPU</span>
-                <span className="text-xs text-slate-500">PID · Name · CPU% · MEM%</span>
-              </div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-slate-500 border-b border-slate-700">
-                    <th className="text-left px-5 py-2 font-medium">PID</th>
-                    <th className="text-left px-5 py-2 font-medium">Process</th>
-                    <th className="text-right px-5 py-2 font-medium">CPU %</th>
-                    <th className="text-right px-5 py-2 font-medium">MEM %</th>
-                    <th className="text-right px-5 py-2 font-medium">MEM MB</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {host.topProcesses.map((proc, idx) => (
-                    <tr
-                      key={proc.pid}
-                      className={`border-b border-slate-700/50 ${idx % 2 === 0 ? "bg-slate-800" : "bg-slate-800/80"} hover:bg-slate-700 transition-colors`}
-                    >
-                      <td className="px-5 py-2.5 text-slate-500 font-mono text-xs">{proc.pid}</td>
-                      <td className="px-5 py-2.5 text-slate-200 font-mono text-xs truncate max-w-xs">{proc.name}</td>
-                      <td className={`px-5 py-2.5 text-right font-semibold font-mono text-xs ${cpuColor(proc.cpu)}`}>
-                        {proc.cpu.toFixed(1)}
-                      </td>
-                      <td className="px-5 py-2.5 text-right text-slate-300 font-mono text-xs">{proc.mem.toFixed(1)}</td>
-                      <td className="px-5 py-2.5 text-right text-slate-400 font-mono text-xs">{proc.memMb.toLocaleString()}</td>
+            {host.online && host.topProcesses.length > 0 && (
+              <div>
+                <div className="px-5 py-3 flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-300">Top Processes by CPU</span>
+                  <span className="text-xs text-slate-500">PID · Name · CPU% · MEM%</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-slate-500 border-b border-slate-700">
+                      <th className="text-left px-5 py-2 font-medium">PID</th>
+                      <th className="text-left px-5 py-2 font-medium">Process</th>
+                      <th className="text-right px-5 py-2 font-medium">CPU %</th>
+                      <th className="text-right px-5 py-2 font-medium">MEM %</th>
+                      <th className="text-right px-5 py-2 font-medium">MEM MB</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {host.topProcesses.map((proc, idx) => (
+                      <tr
+                        key={proc.pid}
+                        className={`border-b border-slate-700/50 ${idx % 2 === 0 ? "bg-slate-800" : "bg-slate-800/80"} hover:bg-slate-700 transition-colors`}
+                      >
+                        <td className="px-5 py-2.5 text-slate-500 font-mono text-xs">{proc.pid}</td>
+                        <td className="px-5 py-2.5 text-slate-200 font-mono text-xs truncate max-w-xs">{proc.name}</td>
+                        <td className={`px-5 py-2.5 text-right font-semibold font-mono text-xs ${cpuColor(proc.cpu)}`}>
+                          {proc.cpu.toFixed(1)}
+                        </td>
+                        <td className="px-5 py-2.5 text-right text-slate-300 font-mono text-xs">{proc.mem.toFixed(1)}</td>
+                        <td className="px-5 py-2.5 text-right text-slate-400 font-mono text-xs">{proc.memMb.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         );
       })}

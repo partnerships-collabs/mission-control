@@ -4,22 +4,59 @@
     "name": "Mission Control v2",
     "status": "In Progress",
     "owner": "Axel",
-    "description": "Apple's morning command center — Phase 1 build with home page, activity feed, projects."
-  },
-  {
-    "id": "sponsor-detection-v5",
-    "name": "Sponsor Detection v5",
-    "status": "On Hold",
-    "owner": "Apple",
-    "description": "Next-gen sponsor detection model. Paused per Apple directive."
+    "description": "Apple's morning command center. Real-data wiring of all 10 pages.",
+    "detail": "Real-data wiring"
   },
   {
     "id": "inbound-email-engine",
     "name": "Inbound Email Engine",
     "status": "Blocked",
     "owner": "Ari",
-    "description": "Creator identification, brand research, agent assignment, email drafting — all built and tested.",
-    "blockingReason": "Needs gmail.send scope added to service account"
+    "description": "Creator identification, brand research, agent assignment, email drafting — built and tested.",
+    "blockingReason": "Needs gmail.send scope added to service account",
+    "detail": "Needs gmail.send scope"
+  },
+  {
+    "id": "label-cleaning",
+    "name": "Label Cleaning",
+    "status": "Blocked",
+    "owner": "Axel",
+    "description": "Cleaning pipeline labels for brand normalization. 88% done, API key issue.",
+    "blockingReason": "API key issue",
+    "detail": "88% done, API key issue"
+  },
+  {
+    "id": "channel-discovery",
+    "name": "Channel Discovery",
+    "status": "In Progress",
+    "owner": "Axel",
+    "description": "Perpetual discovery of new YouTube channels via yt-dlp on Mini.",
+    "detail": "Perpetual, Mini"
+  },
+  {
+    "id": "agentio-creator-sourcing",
+    "name": "Agentio Creator Sourcing",
+    "status": "In Progress",
+    "owner": "Axel",
+    "description": "Finding and qualifying new creators for Charlie's roster.",
+    "detail": "L2: 671 passed"
+  },
+  {
+    "id": "sponsor-detection-v5",
+    "name": "Sponsor Detection v5",
+    "status": "On Hold",
+    "owner": "Apple",
+    "description": "Next-gen sponsor detection model. Paused per Apple directive.",
+    "detail": "Apple directive"
+  },
+  {
+    "id": "brand-match-app",
+    "name": "Brand Match App",
+    "status": "In Progress",
+    "owner": "Axel",
+    "description": "Creator-brand matching UI on Mini. Cross-sell, recommendations, pipeline.",
+    "detail": "241 recommendations live",
+    "link": "https://brand-match-app.vercel.app"
   },
   {
     "id": "ventures-playbook",
@@ -28,20 +65,5 @@
     "owner": "Axel",
     "description": "In-person ventures playbook site. Deployed and live.",
     "link": "https://ventures-playbook.vercel.app"
-  },
-  {
-    "id": "channel-discovery",
-    "name": "Channel Discovery",
-    "status": "In Progress",
-    "owner": "Axel",
-    "description": "Perpetual yt-dlp discovery engine on Mini. 100K+ candidates, 27 niches, always running."
-  },
-  {
-    "id": "label-cleaning",
-    "name": "Label Cleaning",
-    "status": "Blocked",
-    "owner": "Axel",
-    "description": "Sponsor label normalization — 88% complete.",
-    "blockingReason": "API key issue blocking remaining 12%"
   }
 ]
