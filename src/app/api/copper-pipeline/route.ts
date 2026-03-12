@@ -1,70 +1,63 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
-import path from "path";
 
-const COPPER_EMAIL = "partnerships@creatorsagency.co";
+const CLOSE_API_KEY_PATH = "/Users/aurora/.openclaw/workspaces/axel/.secrets/close_api_key.txt";
+const CLOSE_BASE_URL = "https://api.close.com/api/v1";
+
+interface CloseOpportunity {
+  lead_name: string;
+  value: number | null;
+  date_won: string | null;
+  user_name: string | null;
+  status_label: string | null;
+}
+
+interface CloseResponse {
+  data: CloseOpportunity[];
+  has_more: boolean;
+}
 
 export async function GET() {
   try {
-    const keyPath = path.join(
-      "/Users/aurora/.openclaw/workspaces/axel/.secrets/copper_api_key.txt"
-    );
-    const apiKey = fs.readFileSync(keyPath, "utf-8").trim();
+    const apiKey = fs.readFileSync(CLOSE_API_KEY_PATH, "utf-8").trim();
+    const authHeader = "Basic " + Buffer.from(`${apiKey}:`).toString("base64");
 
-    const res = await fetch(
-      "https://api.copper.com/developer_api/v1/opportunities/search",
-      {
-        method: "POST",
+    const allOpportunities: CloseOpportunity[] = [];
+    let skip = 0;
+    const limit = 100;
+
+    while (true) {
+      const url = `${CLOSE_BASE_URL}/opportunity/?status_type=active&_limit=${limit}&_skip=${skip}`;
+      const res = await fetch(url, {
         headers: {
-          "X-PW-Application": "developer_api",
-          "X-PW-AccessToken": apiKey,
-          "X-PW-UserEmail": COPPER_EMAIL,
+          Authorization: authHeader,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          assignee_id: null,
-          page_size: 200,
-          statuses: ["Open"],
-        }),
-      }
-    );
+      });
 
-    if (!res.ok) {
-      throw new Error(`Copper API error: ${res.status}`);
+      if (!res.ok) throw new Error(`Close API error: ${res.status}`);
+
+      const body: CloseResponse = await res.json();
+      allOpportunities.push(...body.data);
+
+      if (!body.has_more || body.data.length < limit) break;
+      skip += limit;
     }
 
-    const opportunities = await res.json();
-    const open = opportunities.filter(
-      (o: { status: string }) => o.status === "Open"
-    );
-
     let totalOpenValue = 0;
-    const mapped = open.map(
-      (o: {
-        name: string;
-        monetary_value: number | null;
-        close_date: number | null;
-        assignee?: { name?: string };
-        pipeline_stage?: { name?: string };
-      }) => {
-        const val = o.monetary_value || 0;
-        totalOpenValue += val;
-        return {
-          name: o.name,
-          monetary_value: val,
-          close_date: o.close_date
-            ? new Date(o.close_date * 1000).toISOString().split("T")[0]
-            : null,
-          assignee_name: o.assignee?.name || "Unassigned",
-          stage: o.pipeline_stage?.name || "Unknown",
-        };
-      }
-    );
+    const mapped = allOpportunities.map((o) => {
+      const val = o.value || 0;
+      totalOpenValue += val;
+      return {
+        name: o.lead_name,
+        monetary_value: val,
+        close_date: o.date_won ? o.date_won.split("T")[0] : null,
+        assignee_name: o.user_name || "Unassigned",
+        stage: o.status_label || "Unknown",
+      };
+    });
 
-    mapped.sort(
-      (a: { monetary_value: number }, b: { monetary_value: number }) =>
-        b.monetary_value - a.monetary_value
-    );
+    mapped.sort((a, b) => b.monetary_value - a.monetary_value);
 
     return NextResponse.json({
       opportunities: mapped,
@@ -72,7 +65,7 @@ export async function GET() {
       updatedAt: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("Copper pipeline route error:", err);
+    console.error("Close pipeline route error:", err);
     return NextResponse.json(
       { error: String(err), opportunities: [], totalOpenValue: 0 },
       { status: 500 }
