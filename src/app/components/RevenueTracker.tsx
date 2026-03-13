@@ -8,7 +8,7 @@ interface RevenueData {
   last30DayUsd: number;
   projectedAnnualUsd: number;
   sources: {
-    copper: number;
+    copper: number; // API route returns this key for backward compat; powered by Close CRM
     impact: number | null;
     redVentures: number | null;
     adsByMoney: number | null;
@@ -43,7 +43,7 @@ export function RevenueTracker() {
   const pct = Math.min(Math.round((totalYtdUsd / goalUsd) * 100), 100);
 
   const sources = [
-    { label: "Copper", value: data?.sources?.copper ?? null, live: true },
+    { label: "Close", value: data?.sources?.copper ?? null, live: true },
     { label: "Impact", value: null, live: false },
     { label: "RedVentures", value: null, live: false },
     { label: "AdsByMoney", value: null, live: false },
@@ -55,7 +55,7 @@ export function RevenueTracker() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-base font-semibold text-slate-100">Revenue Tracker</h2>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-emerald-400 font-medium">Powered by Copper</span>
+          <span className="text-xs text-emerald-400 font-medium">Powered by Close</span>
           <span className="text-xs text-slate-500">YTD 2026</span>
         </div>
       </div>
