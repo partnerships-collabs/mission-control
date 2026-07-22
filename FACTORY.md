@@ -116,3 +116,48 @@
 **Status:** Done
 
 ---
+
+### [TASK-012] Dynamic Offer Matching Engine
+**Added by:** Code Factory (auto-proposed)
+**Risk:** Low
+**Description:** Implement a recommendation system that suggests offers to creators based on their content niche, audience demographics, and past performance. This would involve creating an API endpoint (`/api/recommendations`) that fetches creator data from the database and matches it with available brand campaigns. Update the `src/app/dashboard/offers/page.tsx` to display personalized recommendations.
+**Success looks like:** Creators see relevant offers on their dashboard, increasing engagement and conversion rates by 20%.
+**Status:** Pending
+
+---
+
+### [TASK-013] Affiliate Link Generator with Analytics Dashboard
+**Added by:** Code Factory (auto-proposed)
+**Risk:** Low
+**Description:** Enhance the affiliate link generation feature by adding real-time analytics. Creators should be able to track clicks, conversions, and earnings per offer. This involves updating `src/app/api/affiliate-links/route.ts` to log events and creating a new page (`src/app/dashboard/analytics/page.tsx`) to display insights.
+**Success looks like:** Creators can track their affiliate performance, leading to a 15% increase in affiliate revenue.
+**Status:** Pending
+
+---
+
+### [TASK-014] Onboarding Flow for New Creators
+**Added by:** Code Factory (auto-proposed)
+**Risk:** Low
+**Description:** Create a guided onboarding flow that collects essential information from new creators (niche, audience size, past deals) to streamline their setup. This involves building a multi-step form in `src/app/onboarding/page.tsx` and updating the database schema to store this data.
+**Success looks like:** New creators complete onboarding 30% faster, reducing support tickets by 25%.
+**Status:** Pending
+
+---
+
+### [TASK-015] Performance Optimization for Dashboard Load Times
+**Added by:** Code Factory (auto-proposed)
+**Risk:** Low
+**Description:** Optimize the dashboard page (`src/app/dashboard/page.tsx`) to reduce load times by lazy-loading non-critical components and implementing server-side data fetching. Use tools like Lighthouse to measure improvements.
+**Success looks like:** Dashboard load time reduced by 40%, improving user satisfaction and retention.
+**Status:** Pending
+
+---
+
+### [TASK-016] Admin Tool for Bulk Offer Management
+**Added by:** Code Factory (auto-proposed)
+**Risk:** Low
+**Description:** Build an admin interface (`src/app/admin/offers/page.tsx`) that allows the team to manage multiple offers at once (e.g., bulk upload, edit, or delete). This involves creating API endpoints (`/api/offers/bulk`) and updating the existing offer management logic.
+**Success looks like:** Admin team reduces time spent on offer management by 30%, allowing them to focus on higher-value tasks.
+**Status:** Pending
+
+---
