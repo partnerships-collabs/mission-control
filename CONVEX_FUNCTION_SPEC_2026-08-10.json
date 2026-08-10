@@ -1,0 +1,2168 @@
+{
+  "url": "https://healthy-bison-550.convex.cloud",
+  "functions": [
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agentFilter": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "eventType": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "timeframe": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "all"
+                },
+                {
+                  "type": "literal",
+                  "value": "today"
+                }
+              ]
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "activity.js:listActivityEvents",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agent": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "description": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "occurredAt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "source": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "status": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "tags": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": true
+          },
+          "title": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "type": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "activity.js:logActivityEvent",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "activity.js:seedActivityEvents",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "host": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "lastActiveAt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "lastJobName": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "model": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "name": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "sessionCount": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "status": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "collectors.js:upsertAgent",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agent": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "avgDurationSec": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "errorCount24h": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "jobId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "lastError": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "lastRunAt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "lastStatus": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "name": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "runCount24h": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "schedule": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "collectors.js:upsertCronJob",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "activeProcesses": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "cpuPct": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "diskUsedGb": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "host": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "memTotalGb": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "memUsedGb": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "ollamaLoadedModels": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": true
+          },
+          "ollamaRunning": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
+          "online": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "collectors.js:upsertInfrastructure",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "brandsInDb": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "newVideos24h": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "pendingReview": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "snapshotAt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "sponsorDetectionPct": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "totalChannels": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "totalVideos": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "videosWithSponsors": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "collectors.js:addPipelineSnapshot",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "brands10plusChannels": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "brands5plusChannels": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "channelsDiscovered": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "descriptionsFetched": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "detectionShardsDone": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "pipelineFlowCycles": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "pipelineFlowLastActive": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "pipelineFlowQueueDepth": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "pipelineFlowStatus": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "qualityChannels": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "sponsoredVideos": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "step4bApiCalls": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "step4bApiCostUsd": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "step4bCompletedShards": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "step4bLastActive": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "step4bOngoingRuns": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "step4bOngoingShards": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "step4bOngoingSponsored": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "step4bOngoingVideos": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "step4bRuns": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "step4bSponsoredCount": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "step4bStatus": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "step4bTotalShards": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "step4bTotalVideos": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "topBrandsJson": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "totalBrands": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "totalDescriptionShards": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "videoIdsHarvested": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "collectors.js:upsertSponsorPipeline",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "capacityPct": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "profileId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "collectors.js:updateTokenCapacity",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "collectors.js:cleanupDuplicates",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agents": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "host": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "lastActiveAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "lastJobName": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": true
+                  },
+                  "model": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "name": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "sessionCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "status": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": true
+          },
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "cronJobs": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "agent": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "avgDurationSec": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": true
+                  },
+                  "description": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": true
+                  },
+                  "errorCount24h": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "jobId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "lastError": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": true
+                  },
+                  "lastRunAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": true
+                  },
+                  "lastStatus": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "name": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "runCount24h": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "schedule": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": true
+          },
+          "infrastructure": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "activeProcesses": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": true
+                  },
+                  "cpuPct": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": true
+                  },
+                  "diskUsedGb": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": true
+                  },
+                  "host": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "memCachedGb": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": true
+                  },
+                  "memTotalGb": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": true
+                  },
+                  "memUsedGb": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": true
+                  },
+                  "ollamaLoadedModels": {
+                    "fieldType": {
+                      "type": "array",
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "optional": true
+                  },
+                  "ollamaRunning": {
+                    "fieldType": {
+                      "type": "boolean"
+                    },
+                    "optional": true
+                  },
+                  "online": {
+                    "fieldType": {
+                      "type": "boolean"
+                    },
+                    "optional": false
+                  },
+                  "topProcesses": {
+                    "fieldType": {
+                      "type": "array",
+                      "value": {
+                        "type": "object",
+                        "value": {
+                          "cpuPct": {
+                            "fieldType": {
+                              "type": "number"
+                            },
+                            "optional": false
+                          },
+                          "description": {
+                            "fieldType": {
+                              "type": "string"
+                            },
+                            "optional": true
+                          },
+                          "memMb": {
+                            "fieldType": {
+                              "type": "number"
+                            },
+                            "optional": false
+                          },
+                          "memPct": {
+                            "fieldType": {
+                              "type": "number"
+                            },
+                            "optional": false
+                          },
+                          "name": {
+                            "fieldType": {
+                              "type": "string"
+                            },
+                            "optional": false
+                          },
+                          "pid": {
+                            "fieldType": {
+                              "type": "number"
+                            },
+                            "optional": false
+                          }
+                        }
+                      }
+                    },
+                    "optional": true
+                  }
+                }
+              }
+            },
+            "optional": true
+          },
+          "pipelineMetrics": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "brandsInDb": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "newVideos24h": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "pendingReview": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "snapshotAt": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "sponsorDetectionPct": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "totalChannels": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "totalVideos": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "videosWithSponsors": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                }
+              }
+            },
+            "optional": true
+          },
+          "tokenUsage": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "capacityPct": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "cooldownMinutesLeft": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "ending": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "inCooldown": {
+                    "fieldType": {
+                      "type": "boolean"
+                    },
+                    "optional": false
+                  },
+                  "label": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "lastManualUpdate": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "profileId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "rateLimitHits": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "resetDay": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "resetHourCt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "collectors.js:batchUpdate",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "dashboard.js:getAgents",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "dashboard.js:getCronSummary",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agent": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "dashboard.js:getCronJobs",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "limit": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "dashboard.js:getRecentCronRuns",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "dashboard.js:getLatestPipelineMetrics",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "dashboard.js:getInfrastructure",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "dashboard.js:getTokenUsage",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "dashboard.js:getSponsorPipeline",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "limit": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "dashboard.js:getRecentActivity",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/activity/log"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/batch"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/token/update"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/sponsor-pipeline"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "GET",
+      "path": "/health"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/projects/upsert"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/needs-apple/add"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "GET",
+      "path": "/needs-apple/list"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/needs-apple/resolve"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "GET",
+      "path": "/revenue/snapshot"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/revenue/snapshot"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "GET",
+      "path": "/revenue/smiirl"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/revenue/refresh-close"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/revenue/close-webhook"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/proposals/upsert"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/memory/upsert"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "GET",
+      "path": "/memory/pending-writes"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/memory/resolve-write"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/memory/prune"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/calendar/upsert"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/calendar/prune"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/pipeline-stats"
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "term": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "search.js:globalSearch",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "needsApple.js:listUnresolved",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "context": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "description": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "fromAgent": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "needsApple.js:addItem",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "context": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "description": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "fromAgent": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "needsApple.js:addNeedsApple",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "id": {
+            "fieldType": {
+              "tableName": "needs_apple",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "needsApple.js:resolveItem",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "id": {
+            "fieldType": {
+              "tableName": "needs_apple",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "needsApple.js:resolveNeedsApple",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "projects.js:listProjects",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "blockingReason": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "description": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "link": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "name": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "owner": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "slug": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "status": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "updatedBy": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "projects.js:upsertProject",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "projects.js:seedProjects",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "blockingReason": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "slug": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "status": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "updatedBy": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "projects.js:updateProjectStatus",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "status": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "proposals.js:listByStatus",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agentOwner": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "brandName": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "docUrl": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "sentAt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "slug": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "status": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "proposals.js:upsertProposal",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "revenue.js:migrateRemoveCopper",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "revenue.js:latestSnapshot",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "goalUsd": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "last30DayUsd": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "projectedAnnualUsd": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "snapshotDate": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "sources": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "adsbymoney": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                },
+                "close": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                },
+                "copper": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                },
+                "impact": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                },
+                "msn": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                },
+                "redventures": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                }
+              }
+            },
+            "optional": false
+          },
+          "totalYtdUsd": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "revenue.js:upsertSnapshot",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "contractingValue": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "dealCounts": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "contracting": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "negotiation": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "proposal": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                }
+              }
+            },
+            "optional": false
+          },
+          "negotiationValue": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "proposalValue": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "pipelineStats.js:upsertPipelineStats",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "pipelineStats.js:getLatestPipelineStats",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agent": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "content": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "filename": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "filepath": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "sizeBytes": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "memoryDocs.js:upsertDoc",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agent": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "limit": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "term": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "memoryDocs.js:searchDocs",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agent": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "memoryDocs.js:listDocs",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agent": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "content": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "filename": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "filepath": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "memoryDocs.js:queueWrite",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "memoryDocs.js:getPendingWrites",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "errorMsg": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "id": {
+            "fieldType": {
+              "tableName": "memory_write_queue",
+              "type": "id"
+            },
+            "optional": false
+          },
+          "success": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "memoryDocs.js:resolveWrite",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "id": {
+            "fieldType": {
+              "tableName": "memory_write_queue",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "memoryDocs.js:getWriteStatus",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "activeFilepaths": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": false
+          },
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "memoryDocs.js:deleteStaleDocs",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "allDay": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          },
+          "attendees": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": true
+          },
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "calendarColor": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "calendarName": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "calendarType": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "description": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "endMs": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "eventId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "htmlLink": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "location": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "startMs": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "title": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "calendarEvents.js:upsertEvent",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "activeEventIds": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": false
+          },
+          "authToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "calendarType": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "calendarEvents.js:deleteStaleEvents",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "calendarType": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "endMs": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "startMs": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "calendarEvents.js:listEvents",
+      "returns": null,
+      "visibility": {
+        "kind": "public"
+      }
+    }
+  ]
+}
