@@ -1,0 +1,73 @@
+name: Deploy Convex production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CI: "true"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+concurrency:
+  group: mission-control-convex-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Validate and deploy
+    environment:
+      name: convex-production
+      url: https://healthy-bison-550.convex.site/revenue/smiirl
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+      CONVEX_SITE_URL: https://healthy-bison-550.convex.site
+
+    steps:
+      - name: Check out the reviewed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.0
+          cache: npm
+
+      - name: Verify deployment credential
+        shell: bash
+        run: |
+          if [ -z "${CONVEX_DEPLOY_KEY:-}" ]; then
+            echo "::error::CONVEX_DEPLOY_KEY is not configured in the convex-production environment."
+            exit 1
+          fi
+          if [ "${CONVEX_DEPLOY_KEY%%|*}" != "prod:healthy-bison-550" ]; then
+            echo "::error::CONVEX_DEPLOY_KEY is not scoped to prod:healthy-bison-550."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run revenue tests
+        run: npm test
+
+      - name: Type-check
+        run: npx tsc --noEmit --incremental false
+
+      - name: Build the application
+        run: npm run build
+
+      - name: Deploy Convex functions
+        run: >-
+          ./node_modules/.bin/convex deploy
+          --typecheck enable
+          --codegen enable
+          --message "GitHub ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
+
+      - name: Verify production routes
+        run: node scripts/verify-convex-production.mjs
