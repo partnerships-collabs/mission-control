@@ -55,7 +55,7 @@ export const searchDocs = query({
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 20;
-    let results = await ctx.db
+    const results = await ctx.db
       .query("memory_docs")
       .withSearchIndex("search_content", (q) => {
         let sq = q.search("content", args.term);
@@ -149,7 +149,7 @@ export const getWriteStatus = query({
   },
 });
 
-export const deleteStaleDocs = mutation({
+export const deleteStaleDocs = internalMutation({
   args: {
     activeFilepaths: v.array(v.string()),
     authToken: v.optional(v.string()),

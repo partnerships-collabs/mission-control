@@ -109,6 +109,7 @@ export default defineSchema(
       goalUsd: v.number(),
       last30DayUsd: v.number(),
       projectedAnnualUsd: v.number(),
+      updatedAt: v.optional(v.number()),
       sources: v.object({
         close: v.optional(v.number()),
         copper: v.optional(v.number()),

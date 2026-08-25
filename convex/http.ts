@@ -1,17 +1,24 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import {
+  hasValidActivityToken,
+  verifyCloseWebhookSignature,
+} from "./httpSecurity";
 
 const http = httpRouter();
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
 function checkActivityToken(req: Request): boolean {
-  const token =
-    req.headers.get("x-activity-token") ??
-    req.headers.get("authorization")?.replace("Bearer ", "");
-  return token === process.env.ACTIVITY_LOG_SECRET;
+  return hasValidActivityToken(req, process.env.ACTIVITY_LOG_SECRET);
+}
+
+function unauthorizedResponse(): Response {
+  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    status: 401,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────
@@ -173,12 +180,16 @@ http.route({
 http.route({
   path: "/revenue/snapshot",
   method: "GET",
-  handler: httpAction(async (ctx) => {
+  handler: httpAction(async (ctx, req) => {
     console.log("[revenue/snapshot GET] received");
+    if (!checkActivityToken(req)) return unauthorizedResponse();
     try {
       const snapshot = await ctx.runQuery(internal.revenue.latestSnapshotInternal, {});
       return new Response(JSON.stringify(snapshot ?? null), {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0",
+        },
       });
     } catch (e) {
       console.error("[revenue/snapshot GET] error:", e instanceof Error ? e.message : String(e));
@@ -192,6 +203,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, req) => {
     console.log("[revenue/snapshot POST] received");
+    if (!checkActivityToken(req)) return unauthorizedResponse();
     try {
       const body = await req.json();
       await ctx.runMutation(internal.revenue.upsertSnapshotInternal, body);
@@ -210,15 +222,30 @@ http.route({
     console.log("[revenue/smiirl] received");
     try {
       const snapshot = await ctx.runQuery(internal.revenue.latestSnapshotInternal, {});
-      const value = snapshot?.totalYtdUsd ?? 0;
+      if (!snapshot) {
+        return new Response(JSON.stringify({ error: "Revenue snapshot unavailable" }), {
+          status: 503,
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store, max-age=0",
+          },
+        });
+      }
       // Smiirl counter expects { "number": <int> }
-      return new Response(JSON.stringify({ number: Math.round(value) }), {
-        headers: { "Content-Type": "application/json" },
+      return new Response(JSON.stringify({ number: Math.round(snapshot.totalYtdUsd) }), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0",
+        },
       });
     } catch (e) {
       console.error("[revenue/smiirl] error:", e instanceof Error ? e.message : String(e));
-      return new Response(JSON.stringify({ number: 0 }), {
-        headers: { "Content-Type": "application/json" },
+      return new Response(JSON.stringify({ error: "Revenue snapshot unavailable" }), {
+        status: 503,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0",
+        },
       });
     }
   }),
@@ -229,6 +256,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, req) => {
     console.log("[revenue/refresh-close] received");
+    if (!checkActivityToken(req)) return unauthorizedResponse();
     try {
       const result = await ctx.runAction(internal.revenue.refreshFromCloseInternal, {});
       console.log("[revenue/refresh-close] completed:", result);
@@ -253,78 +281,30 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, req) => {
     console.log("[close-webhook] request received");
-
-    let rawBody: string;
-    try {
-      rawBody = await req.text();
-    } catch (e) {
-      console.error("[close-webhook] failed to read body:", e instanceof Error ? e.message : String(e));
-      return new Response("Bad request", { status: 400 });
-    }
-
-    console.log(`[close-webhook] body length=${rawBody.length}`);
-
-    // Verify HMAC-SHA256 signature
-    const sigHeader =
-      req.headers.get("X-Close-Signature-256") ??
-      req.headers.get("x-close-signature-256") ??
-      req.headers.get("X-Close-Signature") ??
-      req.headers.get("x-close-signature");
-
-    console.log(`[close-webhook] signature header present=${!!sigHeader} header-name check done`);
-
-    const secret = process.env.CLOSE_WEBHOOK_SIGNATURE_KEY;
-    if (!secret) {
+    const signatureKey = process.env.CLOSE_WEBHOOK_SIGNATURE_KEY;
+    if (!signatureKey) {
       console.error("[close-webhook] CLOSE_WEBHOOK_SIGNATURE_KEY env var not set");
-      return new Response("Server configuration error", { status: 500 });
+      return new Response("Server configuration error", { status: 503 });
     }
 
-    if (sigHeader) {
-      try {
-        const key = await crypto.subtle.importKey(
-          "raw",
-          new TextEncoder().encode(secret),
-          { name: "HMAC", hash: "SHA-256" },
-          false,
-          ["sign"]
-        );
-        const sigBuffer = await crypto.subtle.sign(
-          "HMAC",
-          key,
-          new TextEncoder().encode(rawBody)
-        );
-        const expectedHex = Array.from(new Uint8Array(sigBuffer))
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join("");
-
-        const receivedHex = sigHeader.startsWith("sha256=")
-          ? sigHeader.slice(7)
-          : sigHeader;
-
-        if (receivedHex !== expectedHex) {
-          console.error(
-            `[close-webhook] signature mismatch received=${receivedHex.slice(0, 10)}... expected=${expectedHex.slice(0, 10)}...`
-          );
-          return new Response("Unauthorized", { status: 401 });
-        }
-        console.log("[close-webhook] signature verified ok");
-      } catch (e) {
-        console.error("[close-webhook] signature verification error:", e instanceof Error ? e.message : String(e));
-        return new Response("Signature verification failed", { status: 500 });
+    const rawBody = await req.text();
+    try {
+      if (!(await verifyCloseWebhookSignature(req, rawBody, signatureKey))) {
+        console.warn("[close-webhook] invalid or missing signature");
+        return unauthorizedResponse();
       }
-    } else {
-      console.warn("[close-webhook] no signature header — proceeding without verification");
+    } catch (e) {
+      console.error(
+        "[close-webhook] signature verification error:",
+        e instanceof Error ? e.message : String(e),
+      );
+      return new Response("Signature verification failed", { status: 500 });
     }
 
-    // Parse payload — Close webhook shape:
-    // { subscription_id, event: { object_type, action, data: { status_type, ... }, changed_fields } }
     let payload: {
-      subscription_id?: string;
       event?: {
-        id?: string;
         object_type?: string;
         action?: string;
-        changed_fields?: string[];
         data?: Record<string, unknown>;
         previous_data?: Record<string, unknown>;
       };
@@ -337,37 +317,33 @@ http.route({
     }
 
     const event = payload.event ?? {};
-    console.log(
-      `[close-webhook] subscription_id="${payload.subscription_id}" object_type="${event.object_type}" action="${event.action}" changed_fields=${JSON.stringify(event.changed_fields ?? [])}`
-    );
+    const statusType = event.data?.status_type;
+    const previousStatusType = event.previous_data?.status_type;
+    const affectsWonRevenue =
+      event.object_type === "opportunity" &&
+      (statusType === "won" || previousStatusType === "won");
 
-    // Trigger revenue refresh on won opportunity events
-    if (event.object_type === "opportunity") {
-      const data = event.data ?? {};
-      const statusType = data.status_type as string | undefined;
-      const prevStatusType = (event.previous_data?.status_type ?? "") as string;
+    if (!affectsWonRevenue) {
       console.log(
-        `[close-webhook] opportunity event status_type="${statusType}" prev="${prevStatusType}" action="${event.action}"`
+        `[close-webhook] no won-revenue change for object_type="${event.object_type}" action="${event.action}"`,
       );
-
-      if (statusType === "won") {
-        console.log("[close-webhook] deal won — triggering Close revenue refresh");
-        try {
-          const result = await ctx.runAction(internal.revenue.refreshFromCloseInternal, {});
-          console.log("[close-webhook] revenue refresh complete:", result);
-        } catch (e) {
-          // Log but don't fail the webhook — Close retries on 5xx
-          console.error("[close-webhook] revenue refresh failed:", e instanceof Error ? e.message : String(e));
-        }
-      } else {
-        console.log(`[close-webhook] skipping refresh for status_type="${statusType}"`);
-      }
-    } else {
-      console.log(`[close-webhook] ignoring object_type="${event.object_type}"`);
+      return new Response("ok", { status: 200 });
     }
 
-    console.log("[close-webhook] returning 200 ok");
-    return new Response("ok", { status: 200 });
+    try {
+      const result = await ctx.runAction(internal.revenue.refreshFromCloseInternal, {});
+      console.log("[close-webhook] revenue refresh complete:", result);
+      return new Response(JSON.stringify({ ok: true, ...result }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (e) {
+      console.error(
+        "[close-webhook] revenue refresh failed:",
+        e instanceof Error ? e.message : String(e),
+      );
+      // Close retries failed webhook deliveries, so surface refresh failures.
+      return new Response("Revenue refresh failed", { status: 500 });
+    }
   }),
 });
 
@@ -449,6 +425,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, req) => {
     console.log("[memory/prune] received");
+    if (!checkActivityToken(req)) return unauthorizedResponse();
     try {
       const body = await req.json();
       await ctx.runMutation(internal.memoryDocs.deleteStaleDocs, body);

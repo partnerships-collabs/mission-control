@@ -1,53 +1,26 @@
-import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { fetchCloseWonTotal } from "./closeRevenue";
+import {
+  chicagoDateString,
+  dayOfYearForDate,
+  estimateLast30DayRevenue,
+  isSameRevenueYear,
+  mergeCloseSource,
+  shiftDate,
+  sumRevenueSources,
+} from "./revenueMath";
 
-const GOAL_USD = 25_000_000;
-
-// ── Queries ──────────────────────────────────────────────────────────────────
-
-export const latestSnapshot = query({
-  args: {},
-  handler: async (ctx) => {
-    return await ctx.db
-      .query("revenue_snapshots")
-      .order("desc")
-      .first();
-  },
-});
+type CloseRefreshResult = {
+  closeYtdUsd: number;
+  totalYtdUsd: number;
+  last30DayUsd: number;
+  projectedAnnualUsd: number;
+};
 
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
-export const upsertSnapshot = mutation({
-  args: {
-    snapshotDate: v.string(),
-    totalYtdUsd: v.number(),
-    goalUsd: v.number(),
-    last30DayUsd: v.number(),
-    projectedAnnualUsd: v.number(),
-    sources: v.object({
-      close: v.optional(v.number()),
-      copper: v.optional(v.number()),
-      impact: v.optional(v.number()),
-      adsbymoney: v.optional(v.number()),
-      redventures: v.optional(v.number()),
-      msn: v.optional(v.number()),
-    }),
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("revenue_snapshots")
-      .withIndex("by_date", (q) => q.eq("snapshotDate", args.snapshotDate))
-      .first();
-    if (existing) {
-      await ctx.db.patch(existing._id, args);
-    } else {
-      await ctx.db.insert("revenue_snapshots", args);
-    }
-  },
-});
-
-// Internal version for use by actions
 export const upsertSnapshotInternal = internalMutation({
   args: {
     snapshotDate: v.string(),
@@ -69,10 +42,11 @@ export const upsertSnapshotInternal = internalMutation({
       .query("revenue_snapshots")
       .withIndex("by_date", (q) => q.eq("snapshotDate", args.snapshotDate))
       .first();
+    const snapshot = { ...args, updatedAt: Date.now() };
     if (existing) {
-      await ctx.db.patch(existing._id, args);
+      await ctx.db.patch(existing._id, snapshot);
     } else {
-      await ctx.db.insert("revenue_snapshots", args);
+      await ctx.db.insert("revenue_snapshots", snapshot);
     }
   },
 });
@@ -80,11 +54,74 @@ export const upsertSnapshotInternal = internalMutation({
 export const latestSnapshotInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("revenue_snapshots").order("desc").first();
+    return await ctx.db
+      .query("revenue_snapshots")
+      .withIndex("by_date")
+      .order("desc")
+      .first();
   },
 });
 
-export const migrateRemoveCopper = mutation({
+export const mergeCloseSnapshotInternal = internalMutation({
+  args: {
+    snapshotDate: v.string(),
+    closeYtdUsd: v.number(),
+    closeLast30DayUsd: v.number(),
+  },
+  handler: async (ctx, args): Promise<CloseRefreshResult> => {
+    // Read and merge inside one mutation so a concurrent full collector write
+    // cannot be overwritten with older non-Close source values.
+    const latest = await ctx.db
+      .query("revenue_snapshots")
+      .withIndex("by_date")
+      .order("desc")
+      .first();
+    if (!latest) {
+      throw new Error("Run the daily revenue collector before refreshing Close");
+    }
+    if (!isSameRevenueYear(latest.snapshotDate, args.snapshotDate)) {
+      throw new Error("Run the current-year revenue collector before refreshing Close");
+    }
+
+    const sources = mergeCloseSource(latest.sources, args.closeYtdUsd);
+    const totalYtdUsd = sumRevenueSources(sources);
+    const dayOfYear = dayOfYearForDate(args.snapshotDate);
+    const last30DayUsd = estimateLast30DayRevenue(
+      totalYtdUsd,
+      args.closeYtdUsd,
+      args.closeLast30DayUsd,
+      dayOfYear,
+    );
+    const projectedAnnualUsd = (totalYtdUsd / dayOfYear) * 365;
+    const snapshot = {
+      snapshotDate: args.snapshotDate,
+      totalYtdUsd,
+      goalUsd: latest.goalUsd,
+      last30DayUsd,
+      projectedAnnualUsd,
+      sources,
+      updatedAt: Date.now(),
+    };
+    const existing = await ctx.db
+      .query("revenue_snapshots")
+      .withIndex("by_date", (q) => q.eq("snapshotDate", args.snapshotDate))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, snapshot);
+    } else {
+      await ctx.db.insert("revenue_snapshots", snapshot);
+    }
+
+    return {
+      closeYtdUsd: args.closeYtdUsd,
+      totalYtdUsd,
+      last30DayUsd,
+      projectedAnnualUsd,
+    };
+  },
+});
+
+export const migrateRemoveCopper = internalMutation({
   args: {},
   handler: async (ctx) => {
     const snapshots = await ctx.db.query("revenue_snapshots").collect();
@@ -103,76 +140,34 @@ export const migrateRemoveCopper = mutation({
 
 export const refreshFromCloseInternal = internalAction({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<CloseRefreshResult> => {
     console.log("[revenue.refreshFromClose] starting Close API fetch");
 
     const apiKey = process.env.CLOSE_API_KEY;
-    if (!apiKey) {
-      console.error("[revenue.refreshFromClose] CLOSE_API_KEY env var not set");
-      throw new Error("CLOSE_API_KEY not configured");
-    }
+    if (!apiKey) throw new Error("CLOSE_API_KEY not configured");
 
-    const authHeader = "Basic " + btoa(`${apiKey}:`);
-    let allOpps: Array<{ date_won?: string; value?: number }> = [];
-    let skip = 0;
-    const limit = 100;
+    const snapshotDate = chicagoDateString();
+    const yearStart = `${snapshotDate.slice(0, 4)}-01-01`;
+    const [closeYtdUsd, closeLast30DayUsd] = await Promise.all([
+      fetchCloseWonTotal(apiKey, yearStart, snapshotDate),
+      // Both Close date filters are inclusive, so today through -29 is 30 days.
+      fetchCloseWonTotal(apiKey, shiftDate(snapshotDate, -29), snapshotDate),
+    ]);
 
-    while (true) {
-      console.log(`[revenue.refreshFromClose] fetching page skip=${skip}`);
-      const resp = await fetch(
-        `https://api.close.com/api/v1/opportunity/?status_type=won&_limit=${limit}&_skip=${skip}`,
-        { headers: { Authorization: authHeader, "Content-Type": "application/json" } }
-      );
-
-      if (!resp.ok) {
-        const body = await resp.text().catch(() => "");
-        console.error(`[revenue.refreshFromClose] Close API error status=${resp.status} body=${body.slice(0, 200)}`);
-        throw new Error(`Close API returned ${resp.status}`);
-      }
-
-      const data = await resp.json();
-      console.log(`[revenue.refreshFromClose] got ${data.data?.length ?? 0} opps, has_more=${data.has_more}`);
-      allOpps.push(...(data.data ?? []));
-      if (!data.has_more || (data.data?.length ?? 0) < limit) break;
-      skip += limit;
-    }
-
-    console.log(`[revenue.refreshFromClose] total won opps fetched: ${allOpps.length}`);
-
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-
-    let totalYtdUsd = 0;
-    let last30DayUsd = 0;
-
-    for (const opp of allOpps) {
-      if (!opp.date_won) continue;
-      const dateWon = new Date(opp.date_won);
-      if (dateWon.getFullYear() !== currentYear) continue;
-      const val = opp.value ?? 0;
-      totalYtdUsd += val;
-      if (dateWon >= thirtyDaysAgo) last30DayUsd += val;
-    }
-
-    const projectedAnnualUsd =
-      last30DayUsd > 0 ? Math.round((last30DayUsd / 30) * 365) : 0;
-    const snapshotDate = now.toISOString().split("T")[0];
-
-    console.log(
-      `[revenue.refreshFromClose] totalYtdUsd=${totalYtdUsd} last30Day=${last30DayUsd} projected=${projectedAnnualUsd}`
+    const result: CloseRefreshResult = await ctx.runMutation(
+      internal.revenue.mergeCloseSnapshotInternal,
+      {
+      snapshotDate,
+      closeYtdUsd,
+      closeLast30DayUsd,
+      },
     );
 
-    await ctx.runMutation(internal.revenue.upsertSnapshotInternal, {
-      snapshotDate,
-      totalYtdUsd,
-      goalUsd: GOAL_USD,
-      last30DayUsd,
-      projectedAnnualUsd,
-      sources: { close: totalYtdUsd },
-    });
+    console.log(
+      `[revenue.refreshFromClose] closeYtdUsd=${closeYtdUsd} totalYtdUsd=${result.totalYtdUsd}`
+    );
 
     console.log("[revenue.refreshFromClose] snapshot saved successfully");
-    return { totalYtdUsd, last30DayUsd, projectedAnnualUsd };
+    return result;
   },
 });
