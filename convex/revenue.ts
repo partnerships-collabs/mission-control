@@ -1,122 +1,570 @@
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { fetchCloseWonTotal } from "./closeRevenue";
 import {
+  REVENUE_SOURCE_NAMES,
+  augmentRevenueAttemptWithLastVerified,
+  calculateLegacyRevenueTotal,
   chicagoDateString,
   dayOfYearForDate,
-  estimateLast30DayRevenue,
+  deriveCloseRefreshDiagnostic,
+  deriveRevenueSnapshotMetrics,
+  evaluateRevenueAttempt,
   isSameRevenueYear,
-  mergeCloseSource,
+  legacyRevenueIngestionAllowed,
+  revenueSourceFreshness,
+  revenueScheduleHealth,
+  safeRevenueSourceError,
+  selectRevenueDisplaySnapshot,
   shiftDate,
-  sumRevenueSources,
+  type CompleteRevenueSources,
+  type RevenueSourceHealth,
 } from "./revenueMath";
 
+type CloseDiagnosticBaseStatus =
+  | "verified_base"
+  | "no_verified_base"
+  | "different_revenue_year"
+  | "incomplete_verified_base";
+
 type CloseRefreshResult = {
+  authoritative: false;
+  published: false;
+  snapshotDate: string;
+  recordedAt: number;
   closeYtdUsd: number;
-  totalYtdUsd: number;
-  last30DayUsd: number;
-  projectedAnnualUsd: number;
+  closeLast30DayUsd: number;
+  baseStatus: CloseDiagnosticBaseStatus;
+  baseVerifiedSnapshotDate: string | null;
+  diagnosticTotalYtdUsd: number | null;
+  diagnosticLast30DayUsd: number | null;
+  diagnosticProjectedAnnualUsd: number | null;
 };
+
+type CollectorRunResult = {
+  runId: string;
+  published: boolean;
+  verificationStatus: "verified" | "degraded";
+  totalYtdUsd?: number;
+  issues: string[];
+};
+
+type LegacySnapshotResult = {
+  totalYtdUsd: number;
+};
+
+const revenueSourceHealthEntryValidator = v.object({
+  status: v.union(v.literal("success"), v.literal("failed")),
+  amountUsd: v.optional(v.number()),
+  fetchedAt: v.string(),
+  reused: v.boolean(),
+  error: v.optional(v.string()),
+});
+
+const revenueSourceHealthValidator = v.object({
+  close: revenueSourceHealthEntryValidator,
+  impact: revenueSourceHealthEntryValidator,
+  redventures: revenueSourceHealthEntryValidator,
+  adsbymoney: revenueSourceHealthEntryValidator,
+  msn: revenueSourceHealthEntryValidator,
+});
+
+const completeRevenueSourcesValidator = v.object({
+  close: v.number(),
+  impact: v.number(),
+  redventures: v.number(),
+  adsbymoney: v.number(),
+  msn: v.number(),
+});
+
+function sanitizeSourceHealth(
+  sourceHealth: RevenueSourceHealth,
+): RevenueSourceHealth {
+  return Object.fromEntries(
+    REVENUE_SOURCE_NAMES.map((sourceName) => {
+      const health = sourceHealth[sourceName];
+      const error = safeRevenueSourceError(health.error);
+      const withoutError = { ...health };
+      delete withoutError.error;
+      return [
+        sourceName,
+        error ? { ...withoutError, error } : withoutError,
+      ];
+    }),
+  ) as RevenueSourceHealth;
+}
+
+function summarizeSourceHealth(
+  sourceHealth: RevenueSourceHealth | undefined,
+  nowMs: number,
+) {
+  if (!sourceHealth) return null;
+  return Object.fromEntries(
+    REVENUE_SOURCE_NAMES.map((sourceName) => {
+      const health = sourceHealth[sourceName];
+      return [
+        sourceName,
+        {
+          status: health.status,
+          amountUsd: health.amountUsd ?? null,
+          fetchedAt: health.fetchedAt,
+          reused: health.reused,
+          hasError: Boolean(health.error),
+          error: safeRevenueSourceError(health.error) ?? null,
+          freshness: revenueSourceFreshness(health, nowMs),
+        },
+      ];
+    }),
+  );
+}
 
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
-export const upsertSnapshotInternal = internalMutation({
+export const recordCollectionRunInternal = internalMutation({
+  args: {
+    snapshotDate: v.string(),
+    goalUsd: v.number(),
+    collectorRunId: v.string(),
+    collectorStartedAt: v.string(),
+    collectorCompletedAt: v.string(),
+    closeLast30DayUsd: v.optional(v.number()),
+    sourceHealth: revenueSourceHealthValidator,
+  },
+  handler: async (ctx, args): Promise<CollectorRunResult> => {
+    const priorRun = await ctx.db
+      .query("revenue_collection_runs")
+      .withIndex("by_run_id", (q) => q.eq("collectorRunId", args.collectorRunId))
+      .first();
+    if (priorRun) {
+      return {
+        runId: priorRun.collectorRunId,
+        published: priorRun.published,
+        verificationStatus: priorRun.verificationStatus,
+        issues: priorRun.issues,
+        ...(priorRun.totalYtdUsd === undefined
+          ? {}
+          : { totalYtdUsd: priorRun.totalYtdUsd }),
+      };
+    }
+
+    const receivedAt = Date.now();
+    const sourceHealth = sanitizeSourceHealth(args.sourceHealth);
+    const evaluation = evaluateRevenueAttempt(
+      sourceHealth,
+      args.collectorStartedAt,
+      args.collectorCompletedAt,
+      args.snapshotDate,
+      args.closeLast30DayUsd,
+    );
+    const issues = [...evaluation.issues];
+    if (!args.collectorRunId.trim() || args.collectorRunId.length > 128) {
+      issues.push("collector_run_id_invalid");
+    }
+    if (!Number.isFinite(args.goalUsd) || args.goalUsd <= 0) {
+      issues.push("goal_usd_invalid");
+    }
+    const completedAtMs = Date.parse(args.collectorCompletedAt);
+    if (Number.isFinite(completedAtMs)) {
+      if (completedAtMs > receivedAt + 5 * 60 * 1000) {
+        issues.push("collector_completed_in_future");
+      }
+      if (completedAtMs < receivedAt - 60 * 60 * 1000) {
+        issues.push("collector_attempt_too_old");
+      }
+    }
+
+    const publishable = evaluation.publishable && issues.length === 0;
+    const verificationStatus = publishable ? "verified" : "degraded";
+    let storedSourceHealth = sourceHealth;
+    if (!publishable) {
+      const lastVerifiedSnapshot = await ctx.db
+        .query("revenue_snapshots")
+        .withIndex("by_verification_date", (q) =>
+          q.eq("verificationStatus", "verified"),
+        )
+        .order("desc")
+        .first();
+      storedSourceHealth = augmentRevenueAttemptWithLastVerified(
+        sourceHealth,
+        lastVerifiedSnapshot?.sources,
+      );
+      for (const sourceName of REVENUE_SOURCE_NAMES) {
+        if (
+          storedSourceHealth[sourceName].reused &&
+          !issues.includes(`${sourceName}_reused`)
+        ) {
+          issues.push(`${sourceName}_reused`);
+        }
+      }
+    }
+    let totalYtdUsd: number | undefined;
+    let publishedSnapshotId: Id<"revenue_snapshots"> | undefined;
+
+    if (publishable) {
+      const sources = evaluation.sources as CompleteRevenueSources;
+      const metrics = deriveRevenueSnapshotMetrics(
+        sources,
+        args.snapshotDate,
+        args.closeLast30DayUsd as number,
+      );
+      totalYtdUsd = metrics.totalYtdUsd;
+      const verifiedAt = receivedAt;
+      const snapshot = {
+        snapshotDate: args.snapshotDate,
+        totalYtdUsd,
+        goalUsd: args.goalUsd,
+        last30DayUsd: metrics.last30DayUsd,
+        projectedAnnualUsd: metrics.projectedAnnualUsd,
+        sources,
+        verificationStatus: "verified" as const,
+        verifiedAt,
+        collectorRunId: args.collectorRunId,
+        collectorStartedAt: args.collectorStartedAt,
+        collectorCompletedAt: args.collectorCompletedAt,
+        sourceHealth,
+        updatedAt: receivedAt,
+      };
+      const existingSnapshot = await ctx.db
+        .query("revenue_snapshots")
+        .withIndex("by_date", (q) => q.eq("snapshotDate", args.snapshotDate))
+        .first();
+      if (existingSnapshot) {
+        await ctx.db.patch(existingSnapshot._id, {
+          ...snapshot,
+          // A complete five-source run supersedes any prior Close-only refresh.
+          closeRefreshedAt: undefined,
+        });
+        publishedSnapshotId = existingSnapshot._id;
+      } else {
+        publishedSnapshotId = await ctx.db.insert("revenue_snapshots", snapshot);
+      }
+    }
+
+    await ctx.db.insert("revenue_collection_runs", {
+      collectorRunId: args.collectorRunId,
+      snapshotDate: args.snapshotDate,
+      collectorStartedAt: args.collectorStartedAt,
+      collectorCompletedAt: args.collectorCompletedAt,
+      receivedAt,
+      goalUsd: args.goalUsd,
+      verificationStatus,
+      published: publishable,
+      issues,
+      sourceHealth: storedSourceHealth,
+      ...(args.closeLast30DayUsd === undefined
+        ? {}
+        : { closeLast30DayUsd: args.closeLast30DayUsd }),
+      ...(totalYtdUsd === undefined ? {} : { totalYtdUsd }),
+      ...(publishedSnapshotId === undefined ? {} : { publishedSnapshotId }),
+    });
+
+    return {
+      runId: args.collectorRunId,
+      published: publishable,
+      verificationStatus,
+      issues,
+      ...(totalYtdUsd === undefined ? {} : { totalYtdUsd }),
+    };
+  },
+});
+
+export const upsertLegacySnapshotInternal = internalMutation({
   args: {
     snapshotDate: v.string(),
     totalYtdUsd: v.number(),
     goalUsd: v.number(),
     last30DayUsd: v.number(),
     projectedAnnualUsd: v.number(),
-    sources: v.object({
-      close: v.optional(v.number()),
-      copper: v.optional(v.number()),
-      impact: v.optional(v.number()),
-      adsbymoney: v.optional(v.number()),
-      redventures: v.optional(v.number()),
-      msn: v.optional(v.number()),
-    }),
+    sources: completeRevenueSourcesValidator,
   },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
+  handler: async (ctx, args): Promise<LegacySnapshotResult> => {
+    const [verifiedSnapshot, verifiedRun] = await Promise.all([
+      ctx.db
+        .query("revenue_snapshots")
+        .withIndex("by_verification_date", (q) =>
+          q.eq("verificationStatus", "verified"),
+        )
+        .first(),
+      ctx.db
+        .query("revenue_collection_runs")
+        .withIndex("by_verification_received_at", (q) =>
+          q.eq("verificationStatus", "verified"),
+        )
+        .first(),
+    ]);
+    if (
+      !legacyRevenueIngestionAllowed(
+        Boolean(verifiedSnapshot),
+        Boolean(verifiedRun),
+      )
+    ) {
+      throw new Error("Legacy revenue ingestion ended after verified cutover");
+    }
+
+    const totalYtdUsd = calculateLegacyRevenueTotal(args.sources);
+    const parsedDate = Date.parse(`${args.snapshotDate}T00:00:00Z`);
+    const snapshotDateIsValid =
+      /^\d{4}-\d{2}-\d{2}$/.test(args.snapshotDate) &&
+      Number.isFinite(parsedDate) &&
+      new Date(parsedDate).toISOString().slice(0, 10) === args.snapshotDate;
+    if (
+      totalYtdUsd === null ||
+      !snapshotDateIsValid ||
+      !Number.isFinite(args.goalUsd) ||
+      args.goalUsd <= 0 ||
+      !Number.isFinite(args.last30DayUsd) ||
+      args.last30DayUsd < 0
+    ) {
+      throw new Error("Legacy revenue snapshot is invalid");
+    }
+
+    const dayOfYear = dayOfYearForDate(args.snapshotDate);
+    const snapshot = {
+      snapshotDate: args.snapshotDate,
+      totalYtdUsd,
+      goalUsd: args.goalUsd,
+      last30DayUsd: args.last30DayUsd,
+      projectedAnnualUsd: (totalYtdUsd / dayOfYear) * 365,
+      sources: args.sources,
+      updatedAt: Date.now(),
+    };
+    const existingSnapshot = await ctx.db
       .query("revenue_snapshots")
       .withIndex("by_date", (q) => q.eq("snapshotDate", args.snapshotDate))
       .first();
-    const snapshot = { ...args, updatedAt: Date.now() };
-    if (existing) {
-      await ctx.db.patch(existing._id, snapshot);
+    if (existingSnapshot) {
+      await ctx.db.patch(existingSnapshot._id, {
+        ...snapshot,
+        verificationStatus: undefined,
+        verifiedAt: undefined,
+        collectorRunId: undefined,
+        collectorStartedAt: undefined,
+        collectorCompletedAt: undefined,
+        closeRefreshedAt: undefined,
+        sourceHealth: undefined,
+      });
     } else {
       await ctx.db.insert("revenue_snapshots", snapshot);
     }
+    return { totalYtdUsd };
   },
 });
 
 export const latestSnapshotInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db
+    const snapshots = await ctx.db
       .query("revenue_snapshots")
       .withIndex("by_date")
+      .order("desc")
+      .collect();
+    return selectRevenueDisplaySnapshot(snapshots).snapshot;
+  },
+});
+
+export const latestVerifiedSnapshotInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("revenue_snapshots")
+      .withIndex("by_verification_date", (q) =>
+        q.eq("verificationStatus", "verified"),
+      )
       .order("desc")
       .first();
   },
 });
 
-export const mergeCloseSnapshotInternal = internalMutation({
+export const revenueHealthInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const nowMs = Date.now();
+    const [lastAttempt, lastVerifiedSnapshot, snapshots, lastCloseDiagnostic] =
+      await Promise.all([
+        ctx.db
+          .query("revenue_collection_runs")
+          .withIndex("by_received_at")
+          .order("desc")
+          .first(),
+        ctx.db
+          .query("revenue_snapshots")
+          .withIndex("by_verification_date", (q) =>
+            q.eq("verificationStatus", "verified"),
+          )
+          .order("desc")
+          .first(),
+        ctx.db
+          .query("revenue_snapshots")
+          .withIndex("by_date")
+          .order("desc")
+          .collect(),
+        ctx.db
+          .query("revenue_close_refreshes")
+          .withIndex("by_recorded_at")
+          .order("desc")
+          .first(),
+      ]);
+    const display = selectRevenueDisplaySnapshot(snapshots);
+    const schedule = revenueScheduleHealth(
+      lastAttempt?.snapshotDate ?? null,
+      new Date(nowMs),
+    );
+    const verifiedSourceHealth = lastVerifiedSnapshot?.sourceHealth;
+    const verifiedSourceSummary = summarizeSourceHealth(verifiedSourceHealth, nowMs);
+    const everyVerifiedSourceIsFresh =
+      verifiedSourceHealth !== undefined &&
+      REVENUE_SOURCE_NAMES.every(
+        (sourceName) =>
+          revenueSourceFreshness(verifiedSourceHealth[sourceName], nowMs) === "fresh",
+      );
+
+    return {
+      healthy: Boolean(
+        lastAttempt?.published &&
+          schedule.lastAttemptOnSchedule &&
+          lastVerifiedSnapshot &&
+          everyVerifiedSourceIsFresh,
+      ),
+      schedule,
+      displayStatus: display.status,
+      displaySnapshot: display.snapshot
+        ? {
+            snapshotDate: display.snapshot.snapshotDate,
+            totalYtdUsd: display.snapshot.totalYtdUsd,
+            updatedAt: display.snapshot.updatedAt ?? display.snapshot._creationTime,
+          }
+        : null,
+      lastAttempt: lastAttempt
+        ? {
+            collectorRunId: lastAttempt.collectorRunId,
+            snapshotDate: lastAttempt.snapshotDate,
+            collectorStartedAt: lastAttempt.collectorStartedAt,
+            collectorCompletedAt: lastAttempt.collectorCompletedAt,
+            receivedAt: lastAttempt.receivedAt,
+            verificationStatus: lastAttempt.verificationStatus,
+            published: lastAttempt.published,
+            totalYtdUsd: lastAttempt.totalYtdUsd ?? null,
+            issues: lastAttempt.issues,
+            sourceHealth: summarizeSourceHealth(lastAttempt.sourceHealth, nowMs),
+          }
+        : null,
+      lastVerifiedSnapshot: lastVerifiedSnapshot
+        ? {
+            snapshotDate: lastVerifiedSnapshot.snapshotDate,
+            totalYtdUsd: lastVerifiedSnapshot.totalYtdUsd,
+            verifiedAt: lastVerifiedSnapshot.verifiedAt ?? null,
+            collectorRunId: lastVerifiedSnapshot.collectorRunId ?? null,
+            collectorStartedAt: lastVerifiedSnapshot.collectorStartedAt ?? null,
+            collectorCompletedAt: lastVerifiedSnapshot.collectorCompletedAt ?? null,
+            sourceHealth: verifiedSourceSummary,
+          }
+        : null,
+      lastNonAuthoritativeCloseDiagnostic: lastCloseDiagnostic
+        ? {
+            authoritative: false,
+            published: false,
+            snapshotDate: lastCloseDiagnostic.snapshotDate,
+            recordedAt: lastCloseDiagnostic.recordedAt,
+            freshness:
+              nowMs - lastCloseDiagnostic.recordedAt <= 36 * 60 * 60 * 1000
+                ? "fresh"
+                : "stale",
+            closeYtdUsd: lastCloseDiagnostic.closeYtdUsd,
+            closeLast30DayUsd: lastCloseDiagnostic.closeLast30DayUsd,
+            baseStatus: lastCloseDiagnostic.baseStatus,
+            baseVerifiedSnapshotDate:
+              lastCloseDiagnostic.baseVerifiedSnapshotDate ?? null,
+            diagnosticTotalYtdUsd:
+              lastCloseDiagnostic.diagnosticTotalYtdUsd ?? null,
+            diagnosticLast30DayUsd:
+              lastCloseDiagnostic.diagnosticLast30DayUsd ?? null,
+            diagnosticProjectedAnnualUsd:
+              lastCloseDiagnostic.diagnosticProjectedAnnualUsd ?? null,
+          }
+        : null,
+    };
+  },
+});
+
+export const recordCloseRefreshInternal = internalMutation({
   args: {
     snapshotDate: v.string(),
     closeYtdUsd: v.number(),
     closeLast30DayUsd: v.number(),
   },
   handler: async (ctx, args): Promise<CloseRefreshResult> => {
-    // Read and merge inside one mutation so a concurrent full collector write
-    // cannot be overwritten with older non-Close source values.
     const latest = await ctx.db
       .query("revenue_snapshots")
-      .withIndex("by_date")
+      .withIndex("by_verification_date", (q) =>
+        q.eq("verificationStatus", "verified"),
+      )
       .order("desc")
       .first();
-    if (!latest) {
-      throw new Error("Run the daily revenue collector before refreshing Close");
-    }
-    if (!isSameRevenueYear(latest.snapshotDate, args.snapshotDate)) {
-      throw new Error("Run the current-year revenue collector before refreshing Close");
+    if (
+      !Number.isFinite(args.closeYtdUsd) ||
+      args.closeYtdUsd < 0 ||
+      !Number.isFinite(args.closeLast30DayUsd) ||
+      args.closeLast30DayUsd < 0
+    ) {
+      throw new Error("Close returned an invalid revenue amount");
     }
 
-    const sources = mergeCloseSource(latest.sources, args.closeYtdUsd);
-    const totalYtdUsd = sumRevenueSources(sources);
-    const dayOfYear = dayOfYearForDate(args.snapshotDate);
-    const last30DayUsd = estimateLast30DayRevenue(
-      totalYtdUsd,
-      args.closeYtdUsd,
-      args.closeLast30DayUsd,
-      dayOfYear,
-    );
-    const projectedAnnualUsd = (totalYtdUsd / dayOfYear) * 365;
-    const snapshot = {
-      snapshotDate: args.snapshotDate,
-      totalYtdUsd,
-      goalUsd: latest.goalUsd,
-      last30DayUsd,
-      projectedAnnualUsd,
-      sources,
-      updatedAt: Date.now(),
-    };
-    const existing = await ctx.db
-      .query("revenue_snapshots")
-      .withIndex("by_date", (q) => q.eq("snapshotDate", args.snapshotDate))
-      .first();
-    if (existing) {
-      await ctx.db.patch(existing._id, snapshot);
+    let baseStatus: CloseDiagnosticBaseStatus;
+    let diagnostic: ReturnType<typeof deriveCloseRefreshDiagnostic> = null;
+    if (!latest) {
+      baseStatus = "no_verified_base";
+    } else if (!isSameRevenueYear(latest.snapshotDate, args.snapshotDate)) {
+      baseStatus = "different_revenue_year";
     } else {
-      await ctx.db.insert("revenue_snapshots", snapshot);
+      diagnostic = deriveCloseRefreshDiagnostic(
+        latest.sources,
+        args.closeYtdUsd,
+        args.closeLast30DayUsd,
+        args.snapshotDate,
+      );
+      baseStatus = diagnostic
+        ? "verified_base"
+        : "incomplete_verified_base";
     }
+
+    const recordedAt = Date.now();
+    await ctx.db.insert("revenue_close_refreshes", {
+      snapshotDate: args.snapshotDate,
+      recordedAt,
+      closeYtdUsd: args.closeYtdUsd,
+      closeLast30DayUsd: args.closeLast30DayUsd,
+      authoritative: false,
+      published: false,
+      baseStatus,
+      ...(latest
+        ? {
+            baseVerifiedSnapshotId: latest._id,
+            baseVerifiedSnapshotDate: latest.snapshotDate,
+          }
+        : {}),
+      ...(diagnostic
+        ? {
+            diagnosticTotalYtdUsd: diagnostic.totalYtdUsd,
+            diagnosticLast30DayUsd: diagnostic.last30DayUsd,
+            diagnosticProjectedAnnualUsd: diagnostic.projectedAnnualUsd,
+          }
+        : {}),
+    });
 
     return {
+      authoritative: false,
+      published: false,
+      snapshotDate: args.snapshotDate,
+      recordedAt,
       closeYtdUsd: args.closeYtdUsd,
-      totalYtdUsd,
-      last30DayUsd,
-      projectedAnnualUsd,
+      closeLast30DayUsd: args.closeLast30DayUsd,
+      baseStatus,
+      baseVerifiedSnapshotDate: latest?.snapshotDate ?? null,
+      diagnosticTotalYtdUsd: diagnostic?.totalYtdUsd ?? null,
+      diagnosticLast30DayUsd: diagnostic?.last30DayUsd ?? null,
+      diagnosticProjectedAnnualUsd: diagnostic?.projectedAnnualUsd ?? null,
     };
   },
 });
@@ -138,10 +586,10 @@ export const migrateRemoveCopper = internalMutation({
 
 // ── Internal action: fetch revenue from Close API ─────────────────────────────
 
-export const refreshFromCloseInternal = internalAction({
+export const refreshCloseDiagnosticInternal = internalAction({
   args: {},
   handler: async (ctx): Promise<CloseRefreshResult> => {
-    console.log("[revenue.refreshFromClose] starting Close API fetch");
+    console.log("[revenue.refreshCloseDiagnostic] starting Close API fetch");
 
     const apiKey = process.env.CLOSE_API_KEY;
     if (!apiKey) throw new Error("CLOSE_API_KEY not configured");
@@ -151,23 +599,32 @@ export const refreshFromCloseInternal = internalAction({
     const [closeYtdUsd, closeLast30DayUsd] = await Promise.all([
       fetchCloseWonTotal(apiKey, yearStart, snapshotDate),
       // Both Close date filters are inclusive, so today through -29 is 30 days.
-      fetchCloseWonTotal(apiKey, shiftDate(snapshotDate, -29), snapshotDate),
+      fetchCloseWonTotal(
+        apiKey,
+        shiftDate(snapshotDate, -29),
+        snapshotDate,
+        fetch,
+        false,
+      ),
     ]);
 
     const result: CloseRefreshResult = await ctx.runMutation(
-      internal.revenue.mergeCloseSnapshotInternal,
+      internal.revenue.recordCloseRefreshInternal,
       {
-      snapshotDate,
-      closeYtdUsd,
-      closeLast30DayUsd,
+        snapshotDate,
+        closeYtdUsd,
+        closeLast30DayUsd,
       },
     );
 
     console.log(
-      `[revenue.refreshFromClose] closeYtdUsd=${closeYtdUsd} totalYtdUsd=${result.totalYtdUsd}`
+      `[revenue.refreshCloseDiagnostic] closeYtdUsd=${closeYtdUsd} ` +
+        `baseStatus=${result.baseStatus} published=false`,
     );
 
-    console.log("[revenue.refreshFromClose] snapshot saved successfully");
+    console.log(
+      "[revenue.refreshCloseDiagnostic] diagnostic saved; public snapshot unchanged",
+    );
     return result;
   },
 });

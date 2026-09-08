@@ -202,15 +202,86 @@ http.route({
   path: "/revenue/snapshot",
   method: "POST",
   handler: httpAction(async (ctx, req) => {
-    console.log("[revenue/snapshot POST] received");
+    console.log("[revenue/snapshot POST legacy] received");
     if (!checkActivityToken(req)) return unauthorizedResponse();
     try {
       const body = await req.json();
-      await ctx.runMutation(internal.revenue.upsertSnapshotInternal, body);
-      return new Response("ok", { status: 200 });
+      await ctx.runMutation(internal.revenue.upsertLegacySnapshotInternal, body);
+      return new Response("ok", {
+        status: 200,
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store, max-age=0",
+        },
+      });
+    } catch {
+      console.error("[revenue/snapshot POST legacy] rejected");
+      return new Response(JSON.stringify({ ok: false, error: "Legacy revenue ingestion unavailable" }), {
+        status: 409,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0",
+        },
+      });
+    }
+  }),
+});
+
+http.route({
+  path: "/revenue/collection-run",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    console.log("[revenue/collection-run POST] received");
+    if (!checkActivityToken(req)) return unauthorizedResponse();
+    try {
+      const body = await req.json();
+      const result = await ctx.runMutation(
+        internal.revenue.recordCollectionRunInternal,
+        body,
+      );
+      return new Response(JSON.stringify({ ok: true, ...result }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0",
+        },
+      });
+    } catch {
+      console.error("[revenue/collection-run POST] rejected");
+      return new Response(JSON.stringify({ ok: false, error: "Revenue attempt rejected" }), {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0",
+        },
+      });
+    }
+  }),
+});
+
+http.route({
+  path: "/revenue/health",
+  method: "GET",
+  handler: httpAction(async (ctx, req) => {
+    console.log("[revenue/health] received");
+    if (!checkActivityToken(req)) return unauthorizedResponse();
+    try {
+      const health = await ctx.runQuery(internal.revenue.revenueHealthInternal, {});
+      return new Response(JSON.stringify(health), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0",
+        },
+      });
     } catch (e) {
-      console.error("[revenue/snapshot POST] error:", e instanceof Error ? e.message : String(e));
-      return new Response("error", { status: 500 });
+      console.error("[revenue/health] error:", e instanceof Error ? e.message : String(e));
+      return new Response(JSON.stringify({ error: "Revenue health unavailable" }), {
+        status: 503,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0",
+        },
+      });
     }
   }),
 });
@@ -221,6 +292,9 @@ http.route({
   handler: httpAction(async (ctx) => {
     console.log("[revenue/smiirl] received");
     try {
+      // New-format verified snapshots always win. A legacy row is used only
+      // until the first verified collector run so rollout cannot blank the
+      // physical counter.
       const snapshot = await ctx.runQuery(internal.revenue.latestSnapshotInternal, {});
       if (!snapshot) {
         return new Response(JSON.stringify({ error: "Revenue snapshot unavailable" }), {
@@ -258,8 +332,11 @@ http.route({
     console.log("[revenue/refresh-close] received");
     if (!checkActivityToken(req)) return unauthorizedResponse();
     try {
-      const result = await ctx.runAction(internal.revenue.refreshFromCloseInternal, {});
-      console.log("[revenue/refresh-close] completed:", result);
+      const result = await ctx.runAction(
+        internal.revenue.refreshCloseDiagnosticInternal,
+        {},
+      );
+      console.log("[revenue/refresh-close] non-authoritative diagnostic completed:", result);
       return new Response(JSON.stringify({ ok: true, ...result }), {
         headers: { "Content-Type": "application/json" },
       });
@@ -331,18 +408,21 @@ http.route({
     }
 
     try {
-      const result = await ctx.runAction(internal.revenue.refreshFromCloseInternal, {});
-      console.log("[close-webhook] revenue refresh complete:", result);
+      const result = await ctx.runAction(
+        internal.revenue.refreshCloseDiagnosticInternal,
+        {},
+      );
+      console.log("[close-webhook] non-authoritative Close diagnostic complete:", result);
       return new Response(JSON.stringify({ ok: true, ...result }), {
         headers: { "Content-Type": "application/json" },
       });
     } catch (e) {
       console.error(
-        "[close-webhook] revenue refresh failed:",
+        "[close-webhook] Close diagnostic failed:",
         e instanceof Error ? e.message : String(e),
       );
       // Close retries failed webhook deliveries, so surface refresh failures.
-      return new Response("Revenue refresh failed", { status: 500 });
+      return new Response("Close diagnostic failed", { status: 500 });
     }
   }),
 });

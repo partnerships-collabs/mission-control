@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>co.creatorsagency.revenue-collector</string>
+
+  <!-- The final Mac Mini runtime identity. Never run the collector as root. -->
+  <key>UserName</key>
+  <string>ari</string>
+  <key>GroupName</key>
+  <string>staff</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/ari/Services/mission-control/ops/revenue-collector/run-revenue-collector.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/ari/Services/mission-control</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/ari</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>REVENUE_VENV_PYTHON</key>
+    <string>/Users/ari/Services/venvs/mission-control-revenue/bin/python</string>
+    <key>REVENUE_SECRET_LOADER</key>
+    <string>/Users/ari/.openclaw/workspace/scripts/secret_loader.py</string>
+    <key>MSN_GOOGLE_SERVICE_ACCOUNT_FILE</key>
+    <string>/Users/ari/Library/Application Support/CreatorsAgency/revenue-collector/msn-google-service-account.json</string>
+    <key>REVENUE_LOG_DIR</key>
+    <string>/Users/ari/Library/Logs/CreatorsAgency/revenue-collector</string>
+    <key>REVENUE_STATE_DIR</key>
+    <string>/Users/ari/Library/Application Support/CreatorsAgency/revenue-collector</string>
+    <key>REVENUE_TELEGRAM_CHAT_ID_FILE</key>
+    <string>/Users/ari/Library/Application Support/CreatorsAgency/revenue-collector/telegram-chat-id</string>
+  </dict>
+
+  <!-- StartCalendarInterval uses the Mac's local time zone. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>12</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Umask</key>
+  <integer>63</integer>
+
+  <!-- The wrapper owns its private log; discard any uncaptured launchd streams. -->
+  <key>StandardOutPath</key>
+  <string>/dev/null</string>
+  <key>StandardErrorPath</key>
+  <string>/dev/null</string>
+</dict>
+</plist>

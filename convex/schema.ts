@@ -1,6 +1,22 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const revenueSourceHealthEntry = v.object({
+  status: v.union(v.literal("success"), v.literal("failed")),
+  amountUsd: v.optional(v.number()),
+  fetchedAt: v.string(),
+  reused: v.boolean(),
+  error: v.optional(v.string()),
+});
+
+const revenueSourceHealth = v.object({
+  close: revenueSourceHealthEntry,
+  impact: revenueSourceHealthEntry,
+  redventures: revenueSourceHealthEntry,
+  adsbymoney: revenueSourceHealthEntry,
+  msn: revenueSourceHealthEntry,
+});
+
 export default defineSchema(
   {
     activity_events: defineTable({
@@ -118,7 +134,61 @@ export default defineSchema(
         redventures: v.optional(v.number()),
         msn: v.optional(v.number()),
       }),
-    }).index("by_date", ["snapshotDate"]),
+      verificationStatus: v.optional(v.literal("verified")),
+      verifiedAt: v.optional(v.number()),
+      collectorRunId: v.optional(v.string()),
+      collectorStartedAt: v.optional(v.string()),
+      collectorCompletedAt: v.optional(v.string()),
+      closeRefreshedAt: v.optional(v.string()),
+      sourceHealth: v.optional(revenueSourceHealth),
+    })
+      .index("by_date", ["snapshotDate"])
+      .index("by_verification_date", ["verificationStatus", "snapshotDate"]),
+
+    revenue_collection_runs: defineTable({
+      collectorRunId: v.string(),
+      snapshotDate: v.string(),
+      collectorStartedAt: v.string(),
+      collectorCompletedAt: v.string(),
+      receivedAt: v.number(),
+      goalUsd: v.number(),
+      closeLast30DayUsd: v.optional(v.number()),
+      verificationStatus: v.union(
+        v.literal("verified"),
+        v.literal("degraded"),
+      ),
+      published: v.boolean(),
+      totalYtdUsd: v.optional(v.number()),
+      issues: v.array(v.string()),
+      sourceHealth: revenueSourceHealth,
+      publishedSnapshotId: v.optional(v.id("revenue_snapshots")),
+    })
+      .index("by_run_id", ["collectorRunId"])
+      .index("by_received_at", ["receivedAt"])
+      .index("by_verification_received_at", [
+        "verificationStatus",
+        "receivedAt",
+      ]),
+
+    revenue_close_refreshes: defineTable({
+      snapshotDate: v.string(),
+      recordedAt: v.number(),
+      closeYtdUsd: v.number(),
+      closeLast30DayUsd: v.number(),
+      authoritative: v.literal(false),
+      published: v.literal(false),
+      baseStatus: v.union(
+        v.literal("verified_base"),
+        v.literal("no_verified_base"),
+        v.literal("different_revenue_year"),
+        v.literal("incomplete_verified_base"),
+      ),
+      baseVerifiedSnapshotId: v.optional(v.id("revenue_snapshots")),
+      baseVerifiedSnapshotDate: v.optional(v.string()),
+      diagnosticTotalYtdUsd: v.optional(v.number()),
+      diagnosticLast30DayUsd: v.optional(v.number()),
+      diagnosticProjectedAnnualUsd: v.optional(v.number()),
+    }).index("by_recorded_at", ["recordedAt"]),
 
     needs_apple: defineTable({
       fromAgent: v.string(),

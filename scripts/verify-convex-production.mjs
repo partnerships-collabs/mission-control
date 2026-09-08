@@ -20,6 +20,21 @@ async function checkProduction() {
     redirect: "error",
     signal: AbortSignal.timeout(10_000),
   });
+  const revenueHealth = await fetch(`${siteUrl}/revenue/health?deploy_probe=${probe}`, {
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.timeout(10_000),
+  });
+  const unsignedCollectionRun = await fetch(
+    `${siteUrl}/revenue/collection-run?deploy_probe=${probe}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+      redirect: "error",
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
   const unsignedWebhook = await fetch(
     `${siteUrl}/revenue/close-webhook?deploy_probe=${probe}`,
     {
@@ -39,6 +54,8 @@ async function checkProduction() {
       smiirlBody && typeof smiirlBody === "object" ? Object.keys(smiirlBody).sort() : [],
     smiirlStatus: smiirl.status,
     snapshotStatus: snapshot.status,
+    revenueHealthStatus: revenueHealth.status,
+    collectionRunStatus: unsignedCollectionRun.status,
     webhookStatus: unsignedWebhook.status,
   };
 }
@@ -59,6 +76,8 @@ for (let attempt = 1; attempt <= attempts; attempt += 1) {
     lastResult.smiirlContentType?.toLowerCase().includes("application/json") &&
     lastResult.smiirlCacheControl?.toLowerCase().includes("no-store") &&
     lastResult.snapshotStatus === 401 &&
+    lastResult.revenueHealthStatus === 401 &&
+    lastResult.collectionRunStatus === 401 &&
     lastResult.webhookStatus === 401;
 
   if (ready) {

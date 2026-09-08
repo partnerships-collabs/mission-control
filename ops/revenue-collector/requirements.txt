@@ -1,0 +1,4 @@
+# Runtime dependencies for the isolated revenue-collector virtual environment.
+# Keep these exact pins reviewed and update them deliberately.
+google-auth==2.48.0
+requests==2.32.5
