@@ -290,7 +290,7 @@ def load_runtime_secrets() -> RuntimeSecrets:
 
 
 def fetch_close_ytd(
-    start: datetime,
+    start: datetime | None,
     end: datetime,
     close_api_key: str,
     *,
@@ -307,9 +307,10 @@ def fetch_close_ytd(
         "_limit": page_size,
         "_fields": "id,value,value_currency,value_period",
         "status_type": "won",
-        "date_won__gte": start.strftime("%Y-%m-%d"),
         "date_won__lte": end.strftime("%Y-%m-%d"),
     }
+    if start is not None:
+        params["date_won__gte"] = start.strftime("%Y-%m-%d")
 
     while True:
         params["_skip"] = skip
@@ -364,7 +365,7 @@ def fetch_close_ytd(
     return total
 
 
-def fetch_impact_ytd(account_sid: str, auth_token: str, now: datetime) -> float:
+def fetch_impact_ytd(account_sid: str, auth_token: str, now: datetime, *, require_rows: bool = True) -> float:
     start_date = f"{now.year}-01-01"
     end_date = now.strftime("%Y-%m-%d")
     url = (
@@ -396,14 +397,16 @@ def fetch_impact_ytd(account_sid: str, auth_token: str, now: datetime) -> float:
             raise ConnectorError("validation")
         total += _valid_amount(raw_amount)
         day_count += 1
-    if day_count == 0:
+    if day_count > 366:
+        raise ConnectorError("validation")
+    if day_count == 0 and require_rows:
         raise ConnectorError("empty_data")
     log.info(f"Impact: {day_count} days -> ${total:,.2f}")
     return total
 
 
-def _redventures_windows(today: date) -> list[tuple[str, str]]:
-    cursor = date(today.year, 1, 1)
+def _redventures_windows(today: date, start_date: date | None = None) -> list[tuple[str, str]]:
+    cursor = start_date or date(today.year, 1, 1)
     windows: list[tuple[str, str]] = []
     while cursor <= today:
         window_end = min(cursor + timedelta(days=30), today)
@@ -422,6 +425,9 @@ def fetch_redventures_ytd(
     client_secret: str,
     property_id: str,
     now: datetime,
+    *,
+    start_date: date | None = None,
+    require_rows: bool = True,
 ) -> float:
     token_response = requests.post(
         "https://rvmedianetwork-prod.us.auth0.com/oauth/token",
@@ -442,7 +448,7 @@ def fetch_redventures_ytd(
 
     total = 0.0
     row_count = 0
-    for start, end in _redventures_windows(now.date()):
+    for start, end in _redventures_windows(now.date(), start_date):
         response = requests.get(
             "https://reporting-api.rvmedianetwork.com/overview",
             headers={"Authorization": f"Bearer {token}"},
@@ -455,19 +461,39 @@ def fetch_redventures_ytd(
         rows = reporting.get("page") if isinstance(reporting, dict) else None
         if not isinstance(rows, list):
             raise ConnectorError("malformed_response")
+        pagination = reporting.get("pagination", {})
+        if isinstance(pagination, dict) and (pagination.get("totalPages", 1) > 1
+            or pagination.get("totalEntries", len(rows)) > len(rows)):
+            raise ConnectorError("validation")
         for row in rows:
             if not isinstance(row, dict) or "commission" not in row:
                 raise ConnectorError("malformed_response")
             total += _valid_amount(row.get("commission") or 0)
             row_count += 1
-    if row_count == 0:
+    if row_count == 0 and require_rows:
         raise ConnectorError("empty_data")
     log.info(f"RedVentures: {row_count} rows -> ${total:,.2f}")
     return total
 
 
-def fetch_adsbymoney_ytd(api_token: str, now: datetime) -> float:
-    year_start = f"{now.year}-01-01"
+def ads_campaign_earnings(campaign: object, allow_empty_history: bool = False) -> float:
+    if not isinstance(campaign, dict):
+        raise ConnectorError("malformed_response")
+    if campaign.get("earnings") is not None:
+        return _valid_amount(campaign["earnings"])
+    # The API returns its older zero-activity shape for pre-account periods.
+    # Only accept it when every activity/revenue field explicitly equals zero;
+    # never infer that a missing earnings field means no historical earnings.
+    if allow_empty_history and all(
+        campaign.get(field) is not None and _valid_amount(campaign[field]) == 0
+        for field in ("revenue", "leads", "clicks")
+    ):
+        return 0.0
+    raise ConnectorError("malformed_response")
+
+
+def fetch_adsbymoney_ytd(api_token: str, now: datetime, *, start_date: date | None = None, require_rows: bool = True) -> float:
+    year_start = start_date.isoformat() if start_date else f"{now.year}-01-01"
     today = now.strftime("%Y-%m-%d")
     last_error: Exception | None = None
     for attempt in range(3):
@@ -483,13 +509,11 @@ def fetch_adsbymoney_ytd(api_token: str, now: datetime) -> float:
             campaigns = payload.get("data") if isinstance(payload, dict) else None
             if not isinstance(campaigns, list):
                 raise ConnectorError("malformed_response")
-            if not campaigns:
+            if not campaigns and require_rows:
                 raise ConnectorError("empty_data")
             total = 0.0
             for campaign in campaigns:
-                if not isinstance(campaign, dict) or campaign.get("earnings") is None:
-                    raise ConnectorError("malformed_response")
-                total += _valid_amount(campaign["earnings"])
+                total += ads_campaign_earnings(campaign, allow_empty_history=not require_rows)
             log.info(f"AdsByMoney: {len(campaigns)} campaigns -> ${total:,.2f}")
             return total
         except Exception as error:

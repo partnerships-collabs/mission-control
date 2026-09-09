@@ -178,6 +178,28 @@ http.route({
 // ── Revenue ───────────────────────────────────────────────────────────────────
 
 http.route({
+  path: '/revenue/all-time', method: 'GET',
+  handler: httpAction(async (ctx, req) => {
+    if (!checkActivityToken(req)) return unauthorizedResponse();
+    const report = await ctx.runQuery(internal.revenue.allTimeRevenueInternal, {});
+    return new Response(JSON.stringify(report), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  }),
+});
+
+http.route({
+  path: '/revenue/all-time/collection-run', method: 'POST',
+  handler: httpAction(async (ctx, req) => {
+    if (!checkActivityToken(req)) return unauthorizedResponse();
+    try {
+      const result = await ctx.runMutation(internal.revenue.recordAllTimeRunInternal, await req.json());
+      return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+    } catch {
+      return new Response(JSON.stringify({ error: 'All-time revenue attempt rejected' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+  }),
+});
+
+http.route({
   path: "/revenue/snapshot",
   method: "GET",
   handler: httpAction(async (ctx, req) => {

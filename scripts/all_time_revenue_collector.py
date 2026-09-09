@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Collect the same five revenue sources for Apple's lifetime revenue view.
+
+Runs after the existing YTD collector under the same noon scheduler and lock.
+API history is re-read each day, so historical corrections flow into the total.
+The history begins in 2020, before the company's first 2021 Close wins; empty
+pre-account periods are valid. Close has no lower date bound.
+MSN's manual history must explicitly cover every prior year; missing history
+fails the attempt instead of silently using the YTD number as a lifetime total.
+"""
+from __future__ import annotations
+
+import json
+import sys
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime
+
+import revenue_collector as revenue
+
+HISTORY_START_YEAR = 2020
+MSN_HISTORY_RANGE = 'Sheet1!A11:B40'
+
+
+def calendar_months(start_year: int, now: datetime):
+    for year in range(start_year, now.year + 1):
+        for month in range(1, 13):
+            start = date(year, month, 1)
+            if start > now.date():
+                return
+            next_month = date(year + (month == 12), 1 if month == 12 else month + 1, 1)
+            end = min(next_month - revenue.timedelta(days=1), now.date())
+            yield start, datetime.combine(end, datetime.min.time(), tzinfo=revenue.CHICAGO)
+
+
+def msn_history_total(rows: list, ytd: float, year: int) -> float:
+    """History has one [four-digit year, USD amount] row per prior year."""
+    years = {}
+    for row in rows:
+        if not row or row[0] in (None, ''):
+            continue
+        if len(row) < 2 or isinstance(row[0], bool):
+            raise revenue.ConnectorError('validation')
+        try:
+            raw_year = float(row[0])
+            history_year = int(raw_year)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise revenue.ConnectorError('validation') from error
+        if raw_year != history_year or history_year in years or history_year >= year or history_year < HISTORY_START_YEAR:
+            raise revenue.ConnectorError('validation')
+        years[history_year] = revenue._valid_amount(row[1])
+    if set(years) != set(range(HISTORY_START_YEAR, year)):
+        raise revenue.ConnectorError('empty_data')
+    return round(sum(years.values()) + revenue._valid_amount(ytd), 2)
+
+
+def fetch_msn_all_time(service_account_info: dict, now: datetime) -> float:
+    from google.auth.transport.requests import Request
+    from google.oauth2 import service_account
+    credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=[revenue.SHEETS_READONLY_SCOPE])
+    credentials.refresh(Request())
+    response = revenue.requests.get(
+        f'https://sheets.googleapis.com/v4/spreadsheets/{revenue.COUNTER_SHEET_ID}/values:batchGet',
+        headers={'Authorization': f'Bearer {credentials.token}'},
+        params={'ranges': [revenue.COUNTER_SHEET_RANGE, MSN_HISTORY_RANGE], 'valueRenderOption': 'UNFORMATTED_VALUE'},
+        timeout=30,
+    )
+    response.raise_for_status()
+    ranges = response.json().get('valueRanges', [])
+    if len(ranges) != 2:
+        raise revenue.ConnectorError('malformed_response')
+    ytd_rows = ranges[0].get('values', [])
+    if not ytd_rows or not ytd_rows[0]:
+        raise revenue.ConnectorError('empty_data')
+    return msn_history_total(ranges[1].get('values', []), ytd_rows[0][0], now.year)
+
+
+def fetch_impact_all_time(secrets, now: datetime) -> float:
+    total = 0.0
+    for year in range(HISTORY_START_YEAR, now.year + 1):
+        end = now if year == now.year else datetime(year, 12, 31, tzinfo=revenue.CHICAGO)
+        total += revenue.fetch_impact_ytd(secrets.impact_sid, secrets.impact_reporting_password, end, require_rows=year == now.year)
+    return round(total, 2)
+
+
+def fetch_ads_all_time(secrets, now: datetime) -> float:
+    # Monthly windows avoid large historical report timeouts. Each calendar
+    # date appears exactly once, including leap days and the current date.
+    def month_total(bounds):
+        start, end = bounds
+        return revenue.fetch_adsbymoney_ytd(secrets.adsbymoney_api_key, end, start_date=start, require_rows=False)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        total = sum(pool.map(month_total, calendar_months(HISTORY_START_YEAR, now)))
+    if total <= 0:
+        raise revenue.ConnectorError('empty_data')
+    return round(total, 2)
+
+
+def main(dry_run: bool = False) -> int:
+    started = revenue.utc_iso()
+    now = datetime.now(revenue.CHICAGO)
+    secrets = revenue.load_runtime_secrets()
+    fetches = {
+        'close': lambda: revenue.fetch_close_ytd(None, now, secrets.close_api_key),
+        'impact': lambda: fetch_impact_all_time(secrets, now),
+        'redventures': lambda: revenue.fetch_redventures_ytd(secrets.redventures_client_id, secrets.redventures_client_secret, revenue.REDVENTURES_PROPERTY_ID, now, start_date=date(HISTORY_START_YEAR, 1, 1)),
+        'adsbymoney': lambda: fetch_ads_all_time(secrets, now),
+        'msn': lambda: fetch_msn_all_time(secrets.msn_google_service_account, now),
+    }
+    def collect(item):
+        source, fetch = item
+        return source, revenue.collect_source(source, fetch, secrets.source_errors.get(source))
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        health = dict(pool.map(collect, fetches.items()))
+    payload = {
+        'collectorRunId': str(uuid.uuid4()), 'snapshotDate': now.date().isoformat(),
+        'collectorStartedAt': started, 'collectorCompletedAt': revenue.utc_iso(),
+        'sourceHealth': {key: value.to_payload() for key, value in health.items()},
+    }
+    successful = all(value.status == 'success' for value in health.values())
+    if dry_run:
+        print(json.dumps({**payload, 'dryRun': True}, indent=2))
+        return 0 if successful else 1
+    if not secrets.activity_secret:
+        revenue.log.error('All-time revenue ingestion credential unavailable')
+        return 1
+    try:
+        response = revenue.requests.post(
+            f'{revenue.SITE_URL}/revenue/all-time/collection-run',
+            headers={'x-activity-secret': secrets.activity_secret}, json=payload, timeout=30,
+        )
+        response.raise_for_status()
+        result = response.json()
+        if result.get('published') is not successful:
+            raise revenue.ConnectorError('validation')
+        print(json.dumps(result, sort_keys=True))
+    except Exception as error:
+        revenue.log.error('All-time revenue ingestion failed: %s', revenue.controlled_error_message(error))
+        return 1
+    return 0 if successful else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main('--dry-run' in sys.argv))

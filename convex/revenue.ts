@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { fetchCloseWonTotal } from "./closeRevenue";
+import { evaluateAllTimeRevenue } from './allTimeRevenueMath';
 import {
   REVENUE_SOURCE_NAMES,
   augmentRevenueAttemptWithLastVerified,
@@ -77,6 +78,48 @@ const completeRevenueSourcesValidator = v.object({
   redventures: v.number(),
   adsbymoney: v.number(),
   msn: v.number(),
+});
+
+export const recordAllTimeRunInternal = internalMutation({
+  args: {
+    collectorRunId: v.string(), snapshotDate: v.string(),
+    collectorStartedAt: v.string(), collectorCompletedAt: v.string(),
+    sourceHealth: revenueSourceHealthValidator,
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query('revenue_all_time_runs')
+      .withIndex('by_run', q => q.eq('collectorRunId', args.collectorRunId)).first();
+    if (existing) return { published: existing.published, issues: existing.issues, totalAllTimeUsd: existing.totalAllTimeUsd ?? null };
+    const sourceHealth = sanitizeSourceHealth(args.sourceHealth);
+    const receivedAt = Date.now();
+    const evaluation = evaluateAllTimeRevenue({ ...args, sourceHealth }, receivedAt);
+    await ctx.db.insert('revenue_all_time_runs', {
+      ...args, sourceHealth, receivedAt, published: evaluation.published, issues: evaluation.issues,
+      ...(evaluation.totalAllTimeUsd === null ? {} : { totalAllTimeUsd: evaluation.totalAllTimeUsd }),
+    });
+    return evaluation;
+  },
+});
+
+export const allTimeRevenueInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const [lastAttempt, verified] = await Promise.all([
+      ctx.db.query('revenue_all_time_runs').withIndex('by_received_at').order('desc').first(),
+      ctx.db.query('revenue_all_time_runs').withIndex('by_published_completed', q => q.eq('published', true)).order('desc').first(),
+    ]);
+    const schedule = revenueScheduleHealth(verified?.snapshotDate ?? null, new Date());
+    const sources = verified ? Object.fromEntries(REVENUE_SOURCE_NAMES.map(key => [key, verified.sourceHealth[key].amountUsd])) : null;
+    return {
+      healthy: Boolean(verified && lastAttempt?.published && schedule.lastAttemptOnSchedule
+        && REVENUE_SOURCE_NAMES.every(key => revenueSourceFreshness(verified.sourceHealth[key], Date.now()) === 'fresh')),
+      issues: lastAttempt?.issues ?? ['no_complete_history'],
+      snapshot: verified ? {
+        snapshotDate: verified.snapshotDate, collectorCompletedAt: verified.collectorCompletedAt,
+        totalAllTimeUsd: verified.totalAllTimeUsd, sources,
+      } : null,
+    };
+  },
 });
 
 function sanitizeSourceHealth(
