@@ -25,10 +25,20 @@ corrections flow through. Requests that fail or truncate block publication.
 ## MSN history input
 
 The existing Counter spreadsheet is `11m_IbqoiIcWhxLTjNONbrqCe-2NMA8FMxFuOd3LwnoU`.
-The live YTD number remains `Sheet1!B9`. The new lifetime reader additionally
-expects `Sheet1!A11:B40` to contain one year/amount pair for each completed year
-from 2020 through the prior calendar year. Example shape (amounts must come from
-the actual MSN reports; do not substitute these placeholders):
+The live YTD number remains `Sheet1!B9`. The lifetime reader additionally reads
+`Sheet1!A11:B40`. History may be recorded as a verified cumulative balance labeled
+`Through YYYY`, followed by one year/amount pair for each subsequent completed
+year. Alternatively, record all completed years individually from 2020 onward.
+Overlapping cumulative and annual entries are rejected.
+
+Apple confirmed lifetime MSN revenue of **$330,767.36** on September 9, 2026.
+The same-day Counter YTD input was **$119,914.00**, so `Sheet1!A11:B11` records
+`Through 2025` and **$210,853.36**. This fixed balance plus the changing B9 input
+reproduces the confirmed total and includes subsequent YTD increases. Do not make
+the balance a formula subtracting the live B9 input; that would freeze lifetime
+revenue. The cell note records the source and calculation.
+
+For annual entry mode, the shape is:
 
 | Column A | Column B |
 | --- | --- |
@@ -38,8 +48,9 @@ the actual MSN reports; do not substitute these placeholders):
 | 2025 | Verified full-year USD amount |
 
 There is no header in row 11. Blanks are missing data, not zero revenue. An
-unverified or missing year blocks a new complete total. The collector adds the
-prior-year rows to B9 exactly once. At each year rollover, add the finished
+unverified or missing year after the cumulative cutoff (or since 2020 without
+a cumulative balance) blocks a new complete total. The collector adds the
+history to B9 exactly once. At each year rollover, add the finished
 year's final MSN amount and update B9 for the new year, as required for Smiirl.
 The dedicated identity remains read-only; this collector never edits the sheet.
 
@@ -69,4 +80,4 @@ delayed/unavailable status when appropriate. Responses are not cached.
    semantics, Apple access and denial for other users.
 6. Check the next scheduled noon execution and the timestamp displayed in HQ.
 
-Missing historical MSN figures must be resolved before claiming completion.
+Verify all five histories and the deployed daily runtime before claiming completion.
