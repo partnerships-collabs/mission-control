@@ -46,7 +46,17 @@ async function checkProduction() {
     },
   );
 
+  const allTime = await fetch(`${siteUrl}/revenue/all-time?deploy_probe=${probe}`, {
+    redirect: "error", signal: AbortSignal.timeout(10_000),
+  });
+  const allTimeCollectionRun = await fetch(`${siteUrl}/revenue/all-time/collection-run?deploy_probe=${probe}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    redirect: "error", signal: AbortSignal.timeout(10_000),
+  });
+
   return {
+    allTimeStatus: allTime.status,
+    allTimeCollectionRunStatus: allTimeCollectionRun.status,
     number: smiirlBody?.number,
     smiirlCacheControl: smiirl.headers.get("cache-control"),
     smiirlContentType: smiirl.headers.get("content-type"),
@@ -78,7 +88,9 @@ for (let attempt = 1; attempt <= attempts; attempt += 1) {
     lastResult.snapshotStatus === 401 &&
     lastResult.revenueHealthStatus === 401 &&
     lastResult.collectionRunStatus === 401 &&
-    lastResult.webhookStatus === 401;
+    lastResult.webhookStatus === 401 &&
+    lastResult.allTimeStatus === 401 &&
+    lastResult.allTimeCollectionRunStatus === 401;
 
   if (ready) {
     console.log(
