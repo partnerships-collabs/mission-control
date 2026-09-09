@@ -32,6 +32,24 @@ class HistoryTests(unittest.TestCase):
         with self.assertRaises(collector.revenue.ConnectorError):
             collector.msn_history_total([[year, 0] for year in range(2020, 2026)], 100, 2027)
 
+    def test_verified_cumulative_baseline_tracks_new_ytd_revenue(self):
+        rows = [['Through 2025', 210853.36]]
+        self.assertEqual(collector.msn_history_total(rows, 119914, 2026), 330767.36)
+        self.assertEqual(collector.msn_history_total(rows, 119924, 2026), 330777.36)
+        self.assertEqual(collector.msn_history_total(rows + [[2026, 150000]], 25, 2027), 360878.36)
+
+    def test_cumulative_baseline_rejects_overlap_missing_years_and_future_balances(self):
+        baseline = [['Through 2025', 210853.36]]
+        for rows, year in [
+            (baseline + [[2025, 10]], 2026),
+            (baseline + baseline, 2026),
+            (baseline, 2027),
+            ([['Through 2026', 330767.36]], 2026),
+            ([['Through 2025', '']], 2026),
+        ]:
+            with self.assertRaises(collector.revenue.ConnectorError):
+                collector.msn_history_total(rows, 119914, year)
+
 
 if __name__ == '__main__':
     unittest.main()

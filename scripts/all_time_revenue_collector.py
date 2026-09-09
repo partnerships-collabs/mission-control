@@ -11,6 +11,7 @@ fails the attempt instead of silently using the YTD number as a lifetime total.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -34,13 +35,21 @@ def calendar_months(start_year: int, now: datetime):
 
 
 def msn_history_total(rows: list, ytd: float, year: int) -> float:
-    """History has one [four-digit year, USD amount] row per prior year."""
+    """Accept annual rows, or a verified 'Through YYYY' balance plus later years."""
     years = {}
+    baseline = None
     for row in rows:
         if not row or row[0] in (None, ''):
             continue
         if len(row) < 2 or isinstance(row[0], bool):
             raise revenue.ConnectorError('validation')
+        through = re.fullmatch(r'Through (\d{4})', str(row[0]).strip(), re.IGNORECASE)
+        if through:
+            baseline_year = int(through[1])
+            if baseline is not None or not HISTORY_START_YEAR <= baseline_year < year:
+                raise revenue.ConnectorError('validation')
+            baseline = (baseline_year, revenue._valid_amount(row[1]))
+            continue
         try:
             raw_year = float(row[0])
             history_year = int(raw_year)
@@ -49,9 +58,12 @@ def msn_history_total(rows: list, ytd: float, year: int) -> float:
         if raw_year != history_year or history_year in years or history_year >= year or history_year < HISTORY_START_YEAR:
             raise revenue.ConnectorError('validation')
         years[history_year] = revenue._valid_amount(row[1])
-    if set(years) != set(range(HISTORY_START_YEAR, year)):
+    start_year = baseline[0] + 1 if baseline else HISTORY_START_YEAR
+    if any(history_year < start_year for history_year in years):
+        raise revenue.ConnectorError('validation')
+    if set(years) != set(range(start_year, year)):
         raise revenue.ConnectorError('empty_data')
-    return round(sum(years.values()) + revenue._valid_amount(ytd), 2)
+    return round((baseline[1] if baseline else 0) + sum(years.values()) + revenue._valid_amount(ytd), 2)
 
 
 def fetch_msn_all_time(service_account_info: dict, now: datetime) -> float:
