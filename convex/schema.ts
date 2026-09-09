@@ -19,6 +19,19 @@ const revenueSourceHealth = v.object({
 
 export default defineSchema(
   {
+    revenue_all_time_runs: defineTable({
+      collectorRunId: v.string(),
+      snapshotDate: v.string(),
+      collectorStartedAt: v.string(),
+      collectorCompletedAt: v.string(),
+      sourceHealth: revenueSourceHealth,
+      receivedAt: v.number(),
+      published: v.boolean(),
+      issues: v.array(v.string()),
+      totalAllTimeUsd: v.optional(v.number()),
+    }).index('by_run', ['collectorRunId'])
+      .index('by_received_at', ['receivedAt'])
+      .index('by_published_completed', ['published', 'collectorCompletedAt']),
     activity_events: defineTable({
       agent: v.string(),
       type: v.string(),

@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --no-warnings --experimental-strip-types --test tests/*.test.mjs && npm run test:collector",
-    "test:collector": "python3 scripts/test_revenue_collector.py"
+    "test": "node --no-warnings --experimental-strip-types --test tests/*.test.mjs && tsx --test tests/*.test.ts && npm run test:collector",
+    "test:collector": "python3 scripts/test_revenue_collector.py && python3 scripts/test_all_time_revenue.py"
   },
   "dependencies": {
     "convex": "^1.43.0",
@@ -24,6 +24,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
+    "tsx": "^4.20.6",
     "typescript": "5.9.3"
   }
 }
