@@ -55,6 +55,14 @@ class ReconciliationTests(unittest.TestCase):
         rows=m.reconcile([item()],[deal('Snap x Short Name (renewal)')],[],NOW,policy)
         self.assertEqual(rows[0]['reason'],'possible_close_overlap')
 
+    def test_reviewed_exception_expires_when_financial_inputs_change(self):
+        original=item()
+        policy={**POLICY,'overrides':{'1':{'fingerprint':m.item_fingerprint(original),'disposition':'included','references':['verified-invoice-A1']}}}
+        self.assertEqual(m.reconcile([original],[deal()],[],NOW,policy)[0]['disposition'],'included')
+        changed=item(numbers='200')
+        self.assertEqual(m.reconcile([changed],[deal()],[],NOW,policy)[0]['reason'],'override_input_changed')
+        self.assertEqual(m.reconcile([item(status6='Unpaid')],[deal()],[],NOW,policy)[0]['disposition'],'unpaid')
+
     def test_invoice_splits_are_kept_but_identical_lines_are_held(self):
         rows=m.reconcile([item(),item('2',name='Snap x Creator Two')],[],[],NOW,POLICY)
         self.assertEqual(m.summarize(rows,'2026-09-09')['totalAllTimeUsd'],200)
