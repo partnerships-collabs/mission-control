@@ -21,7 +21,7 @@ except ImportError:
 
 BOARD_ID = '4984917746'
 BOARD_URL = 'https://creatorsagency.monday.com/boards/' + BOARD_ID
-RULE_VERSION = '2026-09-09.1'
+RULE_VERSION = '2026-09-09.2'
 COLUMNS = {'numbers': 'numbers', 'numbers7': 'numbers', 'creator_payment': 'numbers',
            'date': 'date', 'date4': 'date', 'status6': 'status', 'label': 'status',
            'invoice__0': 'text', 'text0': 'text'}
@@ -175,6 +175,11 @@ def program_and_creator(name):
     return parts[0].strip(), parts[1].strip() if len(parts) > 1 else ''
 
 
+def item_fingerprint(item):
+    columns = {c['id']: c['text'] for c in item['column_values'] if c['id'] in COLUMNS}
+    return hashlib.sha256(json.dumps({'name':item['name'],'columns':columns}, sort_keys=True).encode()).hexdigest()
+
+
 def brand_matches(brand, value):
     # Word boundaries prevent Course matching Coursera, or Extra matching "extra deliverables".
     return bool(brand and (normalized(brand) == normalized(value)
@@ -272,6 +277,28 @@ def reconcile(items, opportunities, impact, now, policy):
     for row in rows:
         if row['disposition'] == 'included' and counts[fingerprint(row)] > 1:
             row.update(disposition='review', reason='possible_duplicate_monday_line')
+    # Private, evidence-backed exceptions apply to the reviewed financial inputs
+    # only. A later change to the row invalidates that decision automatically.
+    originals = {item['id']:item for item in items}
+    for row in rows:
+        override = policy.get('overrides', {}).get(row['itemId'])
+        if not override or row['disposition'] in ('unpaid','future'):
+            continue
+        if override['fingerprint'] != item_fingerprint(originals[row['itemId']]):
+            row.update(disposition='review', reason='override_input_changed')
+            continue
+        disposition = override['disposition']
+        if disposition == 'included' and (row.get('grossCents') is None or not valid_date(row['paymentDate'])):
+            continue
+        row.update(disposition=disposition, references=override['references'])
+        row.pop('source', None)
+        if disposition == 'included':
+            row['reason'] = 'supplemental_affiliate'
+        elif disposition == 'covered':
+            row['source'] = override['source']
+            row['reason'] = 'linked_close_contract' if override['source'] == 'close' else 'already_in_direct_feed'
+        else:
+            row['reason'] = 'coverage_review'
     return sorted(rows, key=lambda r: int(r['itemId']))
 
 
@@ -298,6 +325,17 @@ def collect(now, state_path=None, policy_path=None):
         or not isinstance(policy.get('creatorAliases'), dict)
         or any(not isinstance(k, str) or not isinstance(v, str) or normalized(k) != k or normalized(v) != v for k,v in policy['creatorAliases'].items())):
         raise revenue.ConnectorError('validation')
+    overrides = policy.get('overrides', {})
+    if not isinstance(overrides, dict):
+        raise revenue.ConnectorError('validation')
+    for item_id, override in overrides.items():
+        if (not item_id.isdigit() or not isinstance(override, dict)
+            or not re.fullmatch(r'[a-f0-9]{64}', override.get('fingerprint',''))
+            or override.get('disposition') not in ('included','covered','review')
+            or not isinstance(override.get('references'), list) or not 1 <= len(override['references']) <= 50
+            or any(not isinstance(ref,str) or not ref.strip() for ref in override['references'])
+            or (override['disposition'] == 'covered' and override.get('source') not in revenue.SOURCE_NAMES)):
+            raise revenue.ConnectorError('validation')
     policy_digest = hashlib.sha256(json.dumps(policy, sort_keys=True).encode()).hexdigest()[:12]
     state = Path(state_path) if state_path else None
     known = json.loads(state.read_text()) if state and state.exists() else []

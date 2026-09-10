@@ -71,6 +71,13 @@ normalizes creator naming differences. The audited rule version includes a diges
 of this policy. A missing or invalid policy fails closed. New programs remain in
 review until their coverage is checked and the private policy is updated.
 
+For a reviewed invoice exception, the optional private `overrides` map is keyed
+by item ID. Each entry requires a fingerprint from `item_fingerprint`, a
+disposition (`included`, `covered`, or `review`) and nonempty evidence references.
+Covered entries also specify the existing source. An edit to the reviewed
+financial inputs invalidates the exception and holds the row for review again;
+an exception cannot make unpaid or future payments count.
+
 Before first activation, seed `monday-item-ids.json` with the IDs from the approved
 initial board capture, preserving any existing IDs. This catches rows archived
 between the initial audit and release. Keep both state files private (0600).
