@@ -113,13 +113,7 @@ for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1)); do
     cd "$REPO_ROOT" || exit 72
     PYTHONPATH="$SECRET_LOADER_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
       MSN_GOOGLE_SERVICE_ACCOUNT_FILE="$MSN_CREDENTIAL_FILE" \
-      "$VENV_PYTHON" scripts/revenue_collector.py || exit $?
-    # The same daily schedule, lock and retries maintain Apple's lifetime view.
-    # The YTD snapshot is already committed, so a history failure cannot replace
-    # or corrupt the Smiirl counter's verified value.
-    PYTHONPATH="$SECRET_LOADER_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
-      MSN_GOOGLE_SERVICE_ACCOUNT_FILE="$MSN_CREDENTIAL_FILE" \
-      "$VENV_PYTHON" scripts/all_time_revenue_collector.py
+      "$VENV_PYTHON" scripts/collect_all_revenue.py
   ) >> "$COLLECTOR_LOG" 2>&1; then
     log_line "revenue collector completed OK on attempt $attempt"
     exit 0

@@ -108,9 +108,9 @@ def fetch_ads_all_time(secrets, now: datetime) -> float:
     return round(total, 2)
 
 
-def main(dry_run: bool = False) -> int:
-    started = revenue.utc_iso()
-    now = datetime.now(revenue.CHICAGO)
+def main(dry_run: bool = False, monday_context: dict | None = None, now: datetime | None = None, started_at: str | None = None) -> int:
+    started = started_at or revenue.utc_iso()
+    now = now or datetime.now(revenue.CHICAGO)
     secrets = revenue.load_runtime_secrets()
     fetches = {
         'close': lambda: revenue.fetch_close_ytd(None, now, secrets.close_api_key),
@@ -124,11 +124,15 @@ def main(dry_run: bool = False) -> int:
         return source, revenue.collect_source(source, fetch, secrets.source_errors.get(source))
     with ThreadPoolExecutor(max_workers=5) as pool:
         health = dict(pool.map(collect, fetches.items()))
+    if monday_context is not None:
+        health['monday_affiliates'] = monday_context['health']
     payload = {
         'collectorRunId': str(uuid.uuid4()), 'snapshotDate': now.date().isoformat(),
         'collectorStartedAt': started, 'collectorCompletedAt': revenue.utc_iso(),
         'sourceHealth': {key: value.to_payload() for key, value in health.items()},
     }
+    if monday_context and monday_context.get('auditId'):
+        payload['mondayAuditId'] = monday_context['auditId']
     successful = all(value.status == 'success' for value in health.values())
     if dry_run:
         print(json.dumps({**payload, 'dryRun': True}, indent=2))

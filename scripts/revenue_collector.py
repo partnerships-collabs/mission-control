@@ -613,14 +613,14 @@ def build_run_payload(
         "snapshotDate": snapshot_date,
         "goalUsd": GOAL_USD,
         "sourceHealth": {
-            source: source_health[source].to_payload() for source in SOURCE_NAMES
+            source: entry.to_payload() for source, entry in source_health.items()
         },
     }
     all_fresh = all(
         source_health[source].status == "success"
         and source_health[source].amount_usd is not None
         and not source_health[source].reused
-        for source in SOURCE_NAMES
+        for source in source_health
     )
     if not all_fresh:
         return payload
@@ -666,12 +666,12 @@ def post_run_report(payload: dict, activity_secret: str) -> dict:
     raise last_error
 
 
-def main(dry_run: bool | None = None) -> int:
+def main(dry_run: bool | None = None, monday_context: dict | None = None, now: datetime | None = None, started_at: str | None = None) -> int:
     if dry_run is None:
         dry_run = "--dry-run" in sys.argv[1:]
     collector_run_id = str(uuid.uuid4())
-    started_at = utc_iso()
-    now = datetime.now(CHICAGO)
+    started_at = started_at or utc_iso()
+    now = now or datetime.now(CHICAGO)
     log.info("=== Revenue Collector run %s starting ===", collector_run_id)
     secrets = load_runtime_secrets()
     ytd_start = datetime(now.year, 1, 1, tzinfo=CHICAGO)
@@ -743,6 +743,8 @@ def main(dry_run: bool | None = None) -> int:
         ),
     )
 
+    if monday_context is not None:
+        source_health["monday_affiliates"] = monday_context["health"]
     completed_at = utc_iso()
     payload = build_run_payload(
         collector_run_id,
@@ -752,9 +754,9 @@ def main(dry_run: bool | None = None) -> int:
         source_health,
         close_last30_holder.get("amount"),
     )
-    all_sources_succeeded = all(
-        source_health[source].status == "success" for source in SOURCE_NAMES
-    )
+    if monday_context and monday_context.get("auditId"):
+        payload["mondayAuditId"] = monday_context["auditId"]
+    all_sources_succeeded = all(entry.status == "success" for entry in source_health.values())
 
     if dry_run:
         print(json.dumps({**payload, "dryRun": True}, indent=2, sort_keys=True))

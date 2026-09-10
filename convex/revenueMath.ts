@@ -6,7 +6,11 @@ export const REVENUE_SOURCE_NAMES = [
   "msn",
 ] as const;
 
-export type RevenueSourceName = (typeof REVENUE_SOURCE_NAMES)[number];
+export type RevenueSourceName = (typeof REVENUE_SOURCE_NAMES)[number] | "monday_affiliates";
+
+export function revenueSourceNames(value?: { monday_affiliates?: unknown }): readonly RevenueSourceName[] {
+  return value?.monday_affiliates !== undefined ? [...REVENUE_SOURCE_NAMES, "monday_affiliates"] : REVENUE_SOURCE_NAMES;
+}
 
 export type RevenueSources = {
   close?: number;
@@ -15,9 +19,10 @@ export type RevenueSources = {
   adsbymoney?: number;
   redventures?: number;
   msn?: number;
+  monday_affiliates?: number;
 };
 
-export type CompleteRevenueSources = Record<RevenueSourceName, number>;
+export type CompleteRevenueSources = Record<(typeof REVENUE_SOURCE_NAMES)[number], number> & { monday_affiliates?: number };
 
 export type RevenueSourceHealthEntry = {
   status: "success" | "failed";
@@ -27,10 +32,7 @@ export type RevenueSourceHealthEntry = {
   error?: string;
 };
 
-export type RevenueSourceHealth = Record<
-  RevenueSourceName,
-  RevenueSourceHealthEntry
->;
+export type RevenueSourceHealth = Record<(typeof REVENUE_SOURCE_NAMES)[number], RevenueSourceHealthEntry> & { monday_affiliates?: RevenueSourceHealthEntry };
 
 export type RevenueAttemptEvaluation = {
   publishable: boolean;
@@ -104,7 +106,7 @@ export function deriveCloseRefreshDiagnostic(
   }
   const diagnosticSources = mergeCloseSource(verifiedSources, closeYtdUsd);
   if (
-    !REVENUE_SOURCE_NAMES.every((sourceName) => {
+    !revenueSourceNames(diagnosticSources).every((sourceName) => {
       const amount = diagnosticSources[sourceName];
       return typeof amount === "number" && Number.isFinite(amount) && amount >= 0;
     })
@@ -129,9 +131,9 @@ export function calculateLegacyRevenueTotal(
   sources: CompleteRevenueSources,
 ): number | null {
   if (
-    !REVENUE_SOURCE_NAMES.every((sourceName) => {
+    !revenueSourceNames(sources).every((sourceName) => {
       const amount = sources[sourceName];
-      return Number.isFinite(amount) && amount >= 0;
+      return typeof amount === "number" && Number.isFinite(amount) && amount >= 0;
     })
   ) {
     return null;
@@ -211,8 +213,8 @@ export function evaluateRevenueAttempt(
   }
 
   const amounts: Partial<CompleteRevenueSources> = {};
-  for (const sourceName of REVENUE_SOURCE_NAMES) {
-    const health = sourceHealth[sourceName];
+  for (const sourceName of revenueSourceNames(sourceHealth)) {
+    const health = sourceHealth[sourceName]!;
     if (health.status !== "success") {
       issues.push(`${sourceName}_failed`);
     }
@@ -246,7 +248,7 @@ export function evaluateRevenueAttempt(
     }
   }
 
-  const sources = REVENUE_SOURCE_NAMES.every(
+  const sources = revenueSourceNames(sourceHealth).every(
     (sourceName) => typeof amounts[sourceName] === "number",
   )
     ? (amounts as CompleteRevenueSources)
@@ -264,8 +266,8 @@ export function augmentRevenueAttemptWithLastVerified(
   lastVerifiedSources?: RevenueSources,
 ): RevenueSourceHealth {
   return Object.fromEntries(
-    REVENUE_SOURCE_NAMES.map((sourceName) => {
-      const health = sourceHealth[sourceName];
+    revenueSourceNames(sourceHealth).map((sourceName) => {
+      const health = sourceHealth[sourceName]!;
       const amountIsUsable =
         typeof health.amountUsd === "number" &&
         Number.isFinite(health.amountUsd) &&

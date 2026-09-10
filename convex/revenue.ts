@@ -1,11 +1,12 @@
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { fetchCloseWonTotal } from "./closeRevenue";
 import { evaluateAllTimeRevenue } from './allTimeRevenueMath';
 import {
-  REVENUE_SOURCE_NAMES,
+  revenueSourceNames,
   augmentRevenueAttemptWithLastVerified,
   calculateLegacyRevenueTotal,
   chicagoDateString,
@@ -70,6 +71,7 @@ const revenueSourceHealthValidator = v.object({
   redventures: revenueSourceHealthEntryValidator,
   adsbymoney: revenueSourceHealthEntryValidator,
   msn: revenueSourceHealthEntryValidator,
+  monday_affiliates: v.optional(revenueSourceHealthEntryValidator),
 });
 
 const completeRevenueSourcesValidator = v.object({
@@ -78,13 +80,26 @@ const completeRevenueSourcesValidator = v.object({
   redventures: v.number(),
   adsbymoney: v.number(),
   msn: v.number(),
+  monday_affiliates: v.optional(v.number()),
 });
+
+async function validateMondayAudit(ctx: MutationCtx, args: {mondayAuditId?:string; snapshotDate:string; sourceHealth:RevenueSourceHealth}, period:'totalYtdUsd'|'totalAllTimeUsd', required:boolean) {
+  const health = args.sourceHealth.monday_affiliates;
+  if (!health) return required ? ['monday_affiliates_required'] : args.mondayAuditId ? ['monday_audit_without_source'] : [];
+  if (health.status !== 'success') return [];
+  if (!args.mondayAuditId) return ['monday_audit_missing'];
+  const audit = await ctx.db.query('revenue_monday_audits').withIndex('by_audit', q => q.eq('auditId', args.mondayAuditId!)).unique();
+  if (!audit || audit.snapshotDate !== args.snapshotDate || audit.fetchedAt !== health.fetchedAt
+    || health.amountUsd === undefined || Math.round(health.amountUsd*100) !== Math.round(audit.summary[period]*100)) return ['monday_audit_mismatch'];
+  return [];
+}
 
 export const recordAllTimeRunInternal = internalMutation({
   args: {
     collectorRunId: v.string(), snapshotDate: v.string(),
     collectorStartedAt: v.string(), collectorCompletedAt: v.string(),
     sourceHealth: revenueSourceHealthValidator,
+    mondayAuditId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db.query('revenue_all_time_runs')
@@ -93,6 +108,9 @@ export const recordAllTimeRunInternal = internalMutation({
     const sourceHealth = sanitizeSourceHealth(args.sourceHealth);
     const receivedAt = Date.now();
     const evaluation = evaluateAllTimeRevenue({ ...args, sourceHealth }, receivedAt);
+    const prior = await ctx.db.query('revenue_all_time_runs').withIndex('by_published_completed', q => q.eq('published', true)).order('desc').first();
+    const mondayIssues = await validateMondayAudit(ctx, args, 'totalAllTimeUsd', Boolean(prior?.sourceHealth.monday_affiliates));
+    if (mondayIssues.length) { evaluation.published = false; evaluation.totalAllTimeUsd = null; evaluation.issues.push(...mondayIssues); }
     await ctx.db.insert('revenue_all_time_runs', {
       ...args, sourceHealth, receivedAt, published: evaluation.published, issues: evaluation.issues,
       ...(evaluation.totalAllTimeUsd === null ? {} : { totalAllTimeUsd: evaluation.totalAllTimeUsd }),
@@ -109,14 +127,17 @@ export const allTimeRevenueInternal = internalQuery({
       ctx.db.query('revenue_all_time_runs').withIndex('by_published_completed', q => q.eq('published', true)).order('desc').first(),
     ]);
     const schedule = revenueScheduleHealth(verified?.snapshotDate ?? null, new Date());
-    const sources = verified ? Object.fromEntries(REVENUE_SOURCE_NAMES.map(key => [key, verified.sourceHealth[key].amountUsd])) : null;
+    const sources = verified ? Object.fromEntries(revenueSourceNames(verified.sourceHealth).map(key => [key, verified.sourceHealth[key]!.amountUsd])) : null;
+    const mondayAudit = verified?.mondayAuditId ? await ctx.db.query('revenue_monday_audits').withIndex('by_audit', q => q.eq('auditId', verified.mondayAuditId!)).unique() : null;
     return {
       healthy: Boolean(verified && lastAttempt?.published && schedule.lastAttemptOnSchedule
-        && REVENUE_SOURCE_NAMES.every(key => revenueSourceFreshness(verified.sourceHealth[key], Date.now()) === 'fresh')),
+        && revenueSourceNames(verified.sourceHealth).every(key => revenueSourceFreshness(verified.sourceHealth[key]!, Date.now()) === 'fresh')),
       issues: lastAttempt?.issues ?? ['no_complete_history'],
       snapshot: verified ? {
         snapshotDate: verified.snapshotDate, collectorCompletedAt: verified.collectorCompletedAt,
         totalAllTimeUsd: verified.totalAllTimeUsd, sources,
+        ...(mondayAudit ? {monday: {auditId:mondayAudit.auditId, fetchedAt:mondayAudit.fetchedAt,
+          ruleVersion:mondayAudit.ruleVersion, summary:mondayAudit.summary}} : {}),
       } : null,
     };
   },
@@ -126,8 +147,8 @@ function sanitizeSourceHealth(
   sourceHealth: RevenueSourceHealth,
 ): RevenueSourceHealth {
   return Object.fromEntries(
-    REVENUE_SOURCE_NAMES.map((sourceName) => {
-      const health = sourceHealth[sourceName];
+    revenueSourceNames(sourceHealth).map((sourceName) => {
+      const health = sourceHealth[sourceName]!;
       const error = safeRevenueSourceError(health.error);
       const withoutError = { ...health };
       delete withoutError.error;
@@ -145,8 +166,8 @@ function summarizeSourceHealth(
 ) {
   if (!sourceHealth) return null;
   return Object.fromEntries(
-    REVENUE_SOURCE_NAMES.map((sourceName) => {
-      const health = sourceHealth[sourceName];
+    revenueSourceNames(sourceHealth).map((sourceName) => {
+      const health = sourceHealth[sourceName]!;
       return [
         sourceName,
         {
@@ -174,6 +195,7 @@ export const recordCollectionRunInternal = internalMutation({
     collectorCompletedAt: v.string(),
     closeLast30DayUsd: v.optional(v.number()),
     sourceHealth: revenueSourceHealthValidator,
+    mondayAuditId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<CollectorRunResult> => {
     const priorRun = await ctx.db
@@ -201,7 +223,8 @@ export const recordCollectionRunInternal = internalMutation({
       args.snapshotDate,
       args.closeLast30DayUsd,
     );
-    const issues = [...evaluation.issues];
+    const priorVerified = await ctx.db.query('revenue_snapshots').withIndex('by_verification_date', q => q.eq('verificationStatus', 'verified')).order('desc').first();
+    const issues = [...evaluation.issues, ...await validateMondayAudit(ctx, args, 'totalYtdUsd', Boolean(priorVerified?.sourceHealth?.monday_affiliates))];
     if (!args.collectorRunId.trim() || args.collectorRunId.length > 128) {
       issues.push("collector_run_id_invalid");
     }
@@ -233,9 +256,9 @@ export const recordCollectionRunInternal = internalMutation({
         sourceHealth,
         lastVerifiedSnapshot?.sources,
       );
-      for (const sourceName of REVENUE_SOURCE_NAMES) {
+      for (const sourceName of revenueSourceNames(storedSourceHealth)) {
         if (
-          storedSourceHealth[sourceName].reused &&
+          storedSourceHealth[sourceName]!.reused &&
           !issues.includes(`${sourceName}_reused`)
         ) {
           issues.push(`${sourceName}_reused`);
@@ -267,6 +290,7 @@ export const recordCollectionRunInternal = internalMutation({
         collectorStartedAt: args.collectorStartedAt,
         collectorCompletedAt: args.collectorCompletedAt,
         sourceHealth,
+        ...(args.mondayAuditId ? {mondayAuditId:args.mondayAuditId} : {}),
         updatedAt: receivedAt,
       };
       const existingSnapshot = await ctx.db
@@ -296,6 +320,7 @@ export const recordCollectionRunInternal = internalMutation({
       published: publishable,
       issues,
       sourceHealth: storedSourceHealth,
+      ...(args.mondayAuditId ? {mondayAuditId:args.mondayAuditId} : {}),
       ...(args.closeLast30DayUsd === undefined
         ? {}
         : { closeLast30DayUsd: args.closeLast30DayUsd }),
@@ -458,9 +483,9 @@ export const revenueHealthInternal = internalQuery({
     const verifiedSourceSummary = summarizeSourceHealth(verifiedSourceHealth, nowMs);
     const everyVerifiedSourceIsFresh =
       verifiedSourceHealth !== undefined &&
-      REVENUE_SOURCE_NAMES.every(
+      revenueSourceNames(verifiedSourceHealth).every(
         (sourceName) =>
-          revenueSourceFreshness(verifiedSourceHealth[sourceName], nowMs) === "fresh",
+          revenueSourceFreshness(verifiedSourceHealth[sourceName]!, nowMs) === "fresh",
       );
 
     return {

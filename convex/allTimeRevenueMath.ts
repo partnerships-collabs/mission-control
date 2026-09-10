@@ -1,6 +1,7 @@
-import type { RevenueSourceHealth } from './revenueMath';
+import type { RevenueSourceHealth, RevenueSourceName } from './revenueMath';
 
-const REVENUE_SOURCE_NAMES = ['close', 'impact', 'redventures', 'adsbymoney', 'msn'] as const;
+const REVENUE_SOURCE_NAMES: RevenueSourceName[] = ['close', 'impact', 'redventures', 'adsbymoney', 'msn'];
+
 
 export type AllTimeRevenueAttempt = {
   collectorRunId: string;
@@ -23,8 +24,9 @@ export function evaluateAllTimeRevenue(attempt: AllTimeRevenueAttempt, now: numb
     issues.push('invalid_snapshot_date');
   }
   let cents = 0;
-  for (const source of REVENUE_SOURCE_NAMES) {
-    const health = attempt.sourceHealth[source];
+  const sources: RevenueSourceName[] = attempt.sourceHealth.monday_affiliates ? [...REVENUE_SOURCE_NAMES, 'monday_affiliates'] : REVENUE_SOURCE_NAMES;
+  for (const source of sources) {
+    const health = attempt.sourceHealth[source]!;
     const fetched = Date.parse(health.fetchedAt);
     if (health.status !== 'success' || health.reused || health.error
       || typeof health.amountUsd !== 'number' || !Number.isFinite(health.amountUsd) || health.amountUsd < 0

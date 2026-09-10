@@ -23,6 +23,28 @@ function unauthorizedResponse(): Response {
 
 // ── Health ────────────────────────────────────────────────────────────────────
 
+for (const path of ['/revenue/monday/chunk', '/revenue/monday/complete']) {
+  http.route({path, method:'POST', handler:httpAction(async (ctx, req) => {
+    if (!checkActivityToken(req)) return unauthorizedResponse();
+    try {
+      const body = await req.json();
+      const result = path.endsWith('/chunk')
+        ? await ctx.runMutation(internal.mondayRevenue.recordChunkInternal, body)
+        : await ctx.runMutation(internal.mondayRevenue.completeAuditInternal, body);
+      return new Response(JSON.stringify(result), {headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+    } catch { return new Response(JSON.stringify({error:'Monday reconciliation rejected'}), {status:400}); }
+  })});
+}
+http.route({path:'/revenue/monday/audit', method:'GET', handler:httpAction(async (ctx, req) => {
+  if (!checkActivityToken(req)) return unauthorizedResponse();
+  try {
+    const params = new URL(req.url).searchParams;
+    const result = await ctx.runQuery(internal.mondayRevenue.auditInternal, {auditId:params.get('auditId') ?? '',
+      page:Number(params.get('page') ?? '0'), ...(params.get('disposition') ? {disposition:params.get('disposition')!} : {})});
+    return new Response(JSON.stringify(result), {status:result ? 200 : 404, headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+  } catch { return new Response(JSON.stringify({error:'Monday reconciliation unavailable'}), {status:400}); }
+})});
+
 http.route({
   path: "/health",
   method: "GET",

@@ -1,7 +1,7 @@
 # Apple's all-time creator revenue
 
-The existing Mac Mini noon Central LaunchDaemon runs the YTD collector first,
-then `scripts/all_time_revenue_collector.py`. Both use the existing process lock,
+The existing Mac Mini noon Central LaunchDaemon runs `scripts/collect_all_revenue.py`,
+which shares one Monday reconciliation between the YTD and lifetime collectors. Both use the existing process lock,
 dedicated Google reader, 1Password identities and three-attempt retry policy.
 No new launchd schedule is required. The all-time collector writes only
 `revenue_all_time_runs`; it cannot replace the Smiirl snapshot.
@@ -12,7 +12,9 @@ Sum gross USD brand partnership contracts won in Close plus Impact Total_Cost,
 RedVentures commission, AdsByMoney earnings and manually recorded MSN revenue.
 The Close contracts are counted once at their full one-time value. These are the
 same five source definitions used by Smiirl, extended to the lifetime period.
-This is creator revenue generated, not agency commission or cash collected.
+This is gross creator deal volume, not agency commission. The supplemental Monday
+source counts received payments; see [MONDAY.md](MONDAY.md) for reconciliation,
+estimates and the private review list.
 
 Close is queried without a lower date bound. The affiliate APIs are queried
 from January 1, 2020, before the company's first 2021 Close wins. The September
@@ -57,7 +59,7 @@ The dedicated identity remains read-only; this collector never edits the sheet.
 ## Consumer and failure behavior
 
 `GET /revenue/all-time` requires the existing activity secret and returns only
-the most recent complete five-source snapshot, its freshness and latest attempt
+the most recent verified snapshot for the active source set, its freshness and latest attempt
 issues. A failed run preserves the previous complete total. Until the first
 complete run, `snapshot` is null. No partial sum is labeled as lifetime revenue.
 
@@ -80,4 +82,4 @@ delayed/unavailable status when appropriate. Responses are not cached.
    semantics, Apple access and denial for other users.
 6. Check the next scheduled noon execution and the timestamp displayed in HQ.
 
-Verify all five histories and the deployed daily runtime before claiming completion.
+Verify all source histories, Monday reconciliation and the deployed daily runtime before claiming completion.

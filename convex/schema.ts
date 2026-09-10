@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { mondayRowValidator, mondaySummaryValidator } from './mondayRevenueMath';
 
 const revenueSourceHealthEntry = v.object({
   status: v.union(v.literal("success"), v.literal("failed")),
@@ -15,11 +16,18 @@ const revenueSourceHealth = v.object({
   redventures: revenueSourceHealthEntry,
   adsbymoney: revenueSourceHealthEntry,
   msn: revenueSourceHealthEntry,
+  monday_affiliates: v.optional(revenueSourceHealthEntry),
 });
 
 export default defineSchema(
   {
+    revenue_monday_chunks: defineTable({ auditId:v.string(), index:v.number(), rows:v.array(mondayRowValidator) })
+      .index('by_audit_chunk', ['auditId','index']),
+    revenue_monday_audits: defineTable({ auditId:v.string(), snapshotDate:v.string(), fetchedAt:v.string(), ruleVersion:v.string(),
+      digest:v.string(), closeEvidenceCount:v.number(), impactEvidenceCount:v.number(), summary:mondaySummaryValidator, receivedAt:v.number() })
+      .index('by_audit',['auditId']),
     revenue_all_time_runs: defineTable({
+      mondayAuditId: v.optional(v.string()),
       collectorRunId: v.string(),
       snapshotDate: v.string(),
       collectorStartedAt: v.string(),
@@ -146,6 +154,7 @@ export default defineSchema(
         adsbymoney: v.optional(v.number()),
         redventures: v.optional(v.number()),
         msn: v.optional(v.number()),
+        monday_affiliates: v.optional(v.number()),
       }),
       verificationStatus: v.optional(v.literal("verified")),
       verifiedAt: v.optional(v.number()),
@@ -154,11 +163,13 @@ export default defineSchema(
       collectorCompletedAt: v.optional(v.string()),
       closeRefreshedAt: v.optional(v.string()),
       sourceHealth: v.optional(revenueSourceHealth),
+      mondayAuditId: v.optional(v.string()),
     })
       .index("by_date", ["snapshotDate"])
       .index("by_verification_date", ["verificationStatus", "snapshotDate"]),
 
     revenue_collection_runs: defineTable({
+      mondayAuditId: v.optional(v.string()),
       collectorRunId: v.string(),
       snapshotDate: v.string(),
       collectorStartedAt: v.string(),
