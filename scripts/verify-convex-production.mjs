@@ -53,8 +53,13 @@ async function checkProduction() {
     method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
     redirect: "error", signal: AbortSignal.timeout(10_000),
   });
+  const mondayStatuses = await Promise.all([
+    ['/revenue/monday/audit', 'GET'], ['/revenue/monday/chunk', 'POST'], ['/revenue/monday/complete', 'POST'],
+  ].map(async ([path, method]) => (await fetch(`${siteUrl}${path}`, {method, ...(method === 'POST' ? {body:'{}',headers:{'Content-Type':'application/json'}} : {}),
+    redirect:'error',signal:AbortSignal.timeout(10_000)})).status));
 
   return {
+    mondayStatuses,
     allTimeStatus: allTime.status,
     allTimeCollectionRunStatus: allTimeCollectionRun.status,
     number: smiirlBody?.number,
@@ -79,6 +84,7 @@ for (let attempt = 1; attempt <= attempts; attempt += 1) {
   }
 
   const ready =
+    lastResult.mondayStatuses?.every(status => status === 401) &&
     lastResult.smiirlStatus === 200 &&
     Number.isSafeInteger(lastResult.number) &&
     lastResult.smiirlKeys?.length === 1 &&

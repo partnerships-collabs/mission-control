@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --no-warnings --experimental-strip-types --test tests/*.test.mjs && tsx --test tests/*.test.ts && npm run test:collector",
-    "test:collector": "python3 scripts/test_revenue_collector.py && python3 scripts/test_all_time_revenue.py"
+    "test:collector": "python3 scripts/test_revenue_collector.py && python3 scripts/test_all_time_revenue.py && python3 scripts/test_monday_affiliates.py"
   },
   "dependencies": {
     "convex": "^1.43.0",
