@@ -1,3 +1,4 @@
+import { monthlyRevenueValidator } from './monthlyRevenueValidator';
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { mondayRowValidator, mondaySummaryValidator } from './mondayRevenueMath';
@@ -27,6 +28,7 @@ export default defineSchema(
       digest:v.string(), closeEvidenceCount:v.number(), impactEvidenceCount:v.number(), summary:mondaySummaryValidator, receivedAt:v.number() })
       .index('by_audit',['auditId']),
     revenue_all_time_runs: defineTable({
+      monthly: v.optional(monthlyRevenueValidator),
       mondayAuditId: v.optional(v.string()),
       collectorRunId: v.string(),
       snapshotDate: v.string(),

@@ -18,7 +18,7 @@ def main(dry_run=False):
         if not dry_run:
             monday.post_audit(audit, revenue.read_secret('mission_control_activity'))
         def context(period):
-            return {'auditId':audit['auditId'], 'health':revenue.SourceHealth(
+            return {'auditId':audit['auditId'], 'rows':audit['rows'], 'health':revenue.SourceHealth(
                 amount_usd=audit['summary'][period], status='success', fetched_at=audit['fetchedAt'], reused=False)}
         ytd_context, all_time_context = context('totalYtdUsd'), context('totalAllTimeUsd')
         revenue.log.info('Monday reconciled: included=%d covered=%d review=%d estimated=%d',

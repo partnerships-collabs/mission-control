@@ -295,6 +295,7 @@ def fetch_close_ytd(
     close_api_key: str,
     *,
     require_rows: bool = True,
+    monthly_totals: dict | None = None,
 ) -> float:
     total = 0.0
     skip = 0
@@ -305,7 +306,7 @@ def fetch_close_ytd(
     invalid_period_count = 0
     params: dict[str, object] = {
         "_limit": page_size,
-        "_fields": "id,value,value_currency,value_period",
+        "_fields": "id,value,value_currency,value_period,date_won" if monthly_totals is not None else "id,value,value_currency,value_period",
         "status_type": "won",
         "date_won__lte": end.strftime("%Y-%m-%d"),
     }
@@ -338,7 +339,15 @@ def fetch_close_ytd(
                 invalid_currency_count += 1
             if deal.get("value_period") != "one_time":
                 invalid_period_count += 1
-            total += _valid_amount(deal.get("value") or 0) / 100.0
+            amount = _valid_amount(deal.get("value") or 0) / 100.0
+            total += amount
+            if monthly_totals is not None:
+                try:
+                    won_date = date.fromisoformat(str(deal.get("date_won", ""))[:10])
+                except ValueError as error:
+                    raise ConnectorError("validation") from error
+                key = won_date.strftime("%Y-%m")
+                monthly_totals[key] = monthly_totals.get(key, 0) + amount
             counted += 1
 
         has_more = payload.get("has_more", False)
@@ -365,8 +374,8 @@ def fetch_close_ytd(
     return total
 
 
-def fetch_impact_ytd(account_sid: str, auth_token: str, now: datetime, *, require_rows: bool = True) -> float:
-    start_date = f"{now.year}-01-01"
+def fetch_impact_ytd(account_sid: str, auth_token: str, now: datetime, *, require_rows: bool = True, start_date: date | None = None) -> float:
+    start_date = start_date.isoformat() if start_date else f"{now.year}-01-01"
     end_date = now.strftime("%Y-%m-%d")
     url = (
         f"https://api.impact.com/Mediapartners/{account_sid}"
