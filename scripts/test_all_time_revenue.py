@@ -51,5 +51,51 @@ class HistoryTests(unittest.TestCase):
                 collector.msn_history_total(rows, 119914, year)
 
 
+class MonthlyTests(unittest.TestCase):
+    def test_monday_only_includes_reconciled_payments_and_preserves_refunds(self):
+        now = datetime(2026, 1, 10)
+        health = {'msn': collector.revenue.SourceHealth(amount_usd=25, status='success', fetched_at='2026-01-10T00:00:00Z', reused=False), 'monday_affiliates': None}
+        rows = [
+            {'disposition':'included', 'paymentDate':'2025-12-01', 'grossCents':500},
+            {'disposition':'included', 'paymentDate':'2026-01-01', 'grossCents':-100},
+            {'disposition':'covered', 'paymentDate':'2026-01-01', 'grossCents':10000},
+            {'disposition':'review', 'paymentDate':'2026-01-01', 'grossCents':10000},
+        ]
+        result = collector.monthly_payload({'close': {'2025-12': 100}}, health, {'rows':rows}, now)
+        self.assertEqual(result['months'][-2]['sources']['monday_affiliates'], 5)
+        self.assertEqual(result['months'][-1]['sources']['monday_affiliates'], -1)
+        self.assertEqual(result['undatedSources'], {'msn':25})
+        self.assertIsNone(collector.monthly_payload({}, health, {}, now))
+
+    def test_close_buckets_won_dates_and_converts_cents(self):
+        from unittest.mock import patch, Mock
+        response = Mock()
+        response.json.return_value = {'data': [
+            {'id':'one', 'value':10000, 'value_currency':'USD', 'value_period':'one_time', 'date_won':'2025-12-31'},
+            {'id':'two', 'value':2500, 'value_currency':'USD', 'value_period':'one_time', 'date_won':'2026-01-01'},
+        ], 'has_more':False}
+        values = {}
+        with patch.object(collector.revenue.requests, 'get', return_value=response) as request:
+            total = collector.revenue.fetch_close_ytd(None, datetime(2026,1,10), 'key', monthly_totals=values)
+        self.assertEqual(total, 125)
+        self.assertEqual(values, {'2025-12':100, '2026-01':25})
+        self.assertIn('date_won', request.call_args.kwargs['params']['_fields'])
+        response.json.return_value['data'][0]['date_won'] = None
+        with patch.object(collector.revenue.requests, 'get', return_value=response):
+            with self.assertRaises(collector.revenue.ConnectorError):
+                collector.revenue.fetch_close_ytd(None, datetime(2026,1,10), 'key', monthly_totals={})
+
+    def test_month_requests_use_nonoverlapping_explicit_bounds(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        secrets = SimpleNamespace(impact_sid='id', impact_reporting_password='password')
+        now = datetime(2020, 2, 20)
+        with patch.object(collector.revenue, 'fetch_impact_ytd', return_value=10) as fetch:
+            result = collector.fetch_monthly_history(secrets, now, 'impact')
+        self.assertEqual(result, {'2020-01':10, '2020-02':10})
+        bounds = sorted((call.kwargs['start_date'].isoformat(), call.args[2].date().isoformat()) for call in fetch.call_args_list)
+        self.assertEqual(bounds, [('2020-01-01','2020-01-31'), ('2020-02-01','2020-02-20')])
+
+
 if __name__ == '__main__':
     unittest.main()

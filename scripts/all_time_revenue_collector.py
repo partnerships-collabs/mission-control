@@ -108,15 +108,57 @@ def fetch_ads_all_time(secrets, now: datetime) -> float:
     return round(total, 2)
 
 
+def fetch_monthly_history(secrets, now, source):
+    def month_total(bounds):
+        start, end = bounds
+        if source == 'impact':
+            amount = revenue.fetch_impact_ytd(secrets.impact_sid, secrets.impact_reporting_password, end, start_date=start, require_rows=False)
+        elif source == 'redventures':
+            amount = revenue.fetch_redventures_ytd(secrets.redventures_client_id, secrets.redventures_client_secret, revenue.REDVENTURES_PROPERTY_ID, end, start_date=start, require_rows=False)
+        else:
+            amount = revenue.fetch_adsbymoney_ytd(secrets.adsbymoney_api_key, end, start_date=start, require_rows=False)
+        return start.strftime('%Y-%m'), round(amount, 2)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        values = dict(pool.map(month_total, calendar_months(HISTORY_START_YEAR, now)))
+    if sum(values.values()) <= 0:
+        raise revenue.ConnectorError('empty_data')
+    return values
+
+
+def monthly_payload(series, health, monday_context, now):
+    # Only reconciled Monday rows contribute; duplicates and review rows are excluded.
+    if 'monday_affiliates' in health:
+        if not monday_context or 'rows' not in monday_context:
+            return None
+        values = {}
+        for row in monday_context['rows']:
+            if row['disposition'] != 'included':
+                continue
+            key = date.fromisoformat(row['paymentDate']).strftime('%Y-%m')
+            values[key] = values.get(key, 0) + row['grossCents'] / 100
+        series['monday_affiliates'] = values
+    keys = set(key for values in series.values() for key in values)
+    # Keep zero months, including gaps and the current month to date.
+    first_year = min([HISTORY_START_YEAR] + [int(key[:4]) for key in keys])
+    keys.update(start.strftime('%Y-%m') for start, _ in calendar_months(first_year, now))
+    rows = [{'month': key, 'sources': {source: round(values.get(key, 0), 2) for source, values in series.items()}}
+            for key in sorted(keys)]
+    return {'months': rows, 'undatedSources': {'msn': health['msn'].amount_usd}}
+
+
 def main(dry_run: bool = False, monday_context: dict | None = None, now: datetime | None = None, started_at: str | None = None) -> int:
     started = started_at or revenue.utc_iso()
     now = now or datetime.now(revenue.CHICAGO)
     secrets = revenue.load_runtime_secrets()
+    series = {'close': {}}
+    def platform(source):
+        series[source] = fetch_monthly_history(secrets, now, source)
+        return round(sum(series[source].values()), 2)
     fetches = {
-        'close': lambda: revenue.fetch_close_ytd(None, now, secrets.close_api_key),
-        'impact': lambda: fetch_impact_all_time(secrets, now),
-        'redventures': lambda: revenue.fetch_redventures_ytd(secrets.redventures_client_id, secrets.redventures_client_secret, revenue.REDVENTURES_PROPERTY_ID, now, start_date=date(HISTORY_START_YEAR, 1, 1)),
-        'adsbymoney': lambda: fetch_ads_all_time(secrets, now),
+        'close': lambda: revenue.fetch_close_ytd(None, now, secrets.close_api_key, monthly_totals=series['close']),
+        'impact': lambda: platform('impact'),
+        'redventures': lambda: platform('redventures'),
+        'adsbymoney': lambda: platform('adsbymoney'),
         'msn': lambda: fetch_msn_all_time(secrets.msn_google_service_account, now),
     }
     def collect(item):
@@ -134,6 +176,10 @@ def main(dry_run: bool = False, monday_context: dict | None = None, now: datetim
     if monday_context and monday_context.get('auditId'):
         payload['mondayAuditId'] = monday_context['auditId']
     successful = all(value.status == 'success' for value in health.values())
+    if successful:
+        monthly = monthly_payload(series, health, monday_context, now)
+        if monthly is not None:
+            payload['monthly'] = monthly
     if dry_run:
         print(json.dumps({**payload, 'dryRun': True}, indent=2))
         return 0 if successful else 1

@@ -1,3 +1,5 @@
+import { monthlyRevenueValidator } from './monthlyRevenueValidator';
+import { validMonthlyRevenue } from './monthlyRevenueMath';
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { MutationCtx } from "./_generated/server";
@@ -96,6 +98,7 @@ async function validateMondayAudit(ctx: MutationCtx, args: {mondayAuditId?:strin
 
 export const recordAllTimeRunInternal = internalMutation({
   args: {
+    monthly: v.optional(monthlyRevenueValidator),
     collectorRunId: v.string(), snapshotDate: v.string(),
     collectorStartedAt: v.string(), collectorCompletedAt: v.string(),
     sourceHealth: revenueSourceHealthValidator,
@@ -111,6 +114,12 @@ export const recordAllTimeRunInternal = internalMutation({
     const prior = await ctx.db.query('revenue_all_time_runs').withIndex('by_published_completed', q => q.eq('published', true)).order('desc').first();
     const mondayIssues = await validateMondayAudit(ctx, args, 'totalAllTimeUsd', Boolean(prior?.sourceHealth.monday_affiliates));
     if (mondayIssues.length) { evaluation.published = false; evaluation.totalAllTimeUsd = null; evaluation.issues.push(...mondayIssues); }
+    if (args.monthly && !validMonthlyRevenue(args.monthly,
+      Object.fromEntries(revenueSourceNames(sourceHealth).map(key => [key, sourceHealth[key]!.amountUsd])), args.snapshotDate)) {
+      evaluation.published = false;
+      evaluation.totalAllTimeUsd = null;
+      evaluation.issues.push('monthly_invalid');
+    }
     await ctx.db.insert('revenue_all_time_runs', {
       ...args, sourceHealth, receivedAt, published: evaluation.published, issues: evaluation.issues,
       ...(evaluation.totalAllTimeUsd === null ? {} : { totalAllTimeUsd: evaluation.totalAllTimeUsd }),
@@ -136,6 +145,7 @@ export const allTimeRevenueInternal = internalQuery({
       snapshot: verified ? {
         snapshotDate: verified.snapshotDate, collectorCompletedAt: verified.collectorCompletedAt,
         totalAllTimeUsd: verified.totalAllTimeUsd, sources,
+        ...(verified.monthly ? { monthly: verified.monthly } : {}),
         ...(mondayAudit ? {monday: {auditId:mondayAudit.auditId, fetchedAt:mondayAudit.fetchedAt,
           ruleVersion:mondayAudit.ruleVersion, summary:mondayAudit.summary}} : {}),
       } : null,
