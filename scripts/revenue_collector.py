@@ -249,7 +249,7 @@ def load_msn_service_account() -> dict:
     return info
 
 
-def load_runtime_secrets() -> RuntimeSecrets:
+def load_runtime_secrets(*, include_msn: bool = True) -> RuntimeSecrets:
     source_errors: dict[str, ConnectorError] = {}
     activity_errors: dict[str, ConnectorError] = {}
     activity_secret = _read_secret_or_error(
@@ -269,11 +269,12 @@ def load_runtime_secrets() -> RuntimeSecrets:
     adsbymoney_api_key = _read_secret_or_error(
         "adsbymoney", "adsbymoney", source_errors
     )
-    try:
-        msn_service_account = load_msn_service_account()
-    except Exception as error:
-        source_errors["msn"] = classify_error(error)
-        msn_service_account = None
+    msn_service_account = None
+    if include_msn:
+        try:
+            msn_service_account = load_msn_service_account()
+        except Exception as error:
+            source_errors["msn"] = classify_error(error)
 
     return RuntimeSecrets(
         activity_secret=activity_secret,
@@ -429,15 +430,7 @@ def _redventures_windows(today: date, start_date: date | None = None) -> list[tu
     return windows
 
 
-def fetch_redventures_ytd(
-    client_id: str,
-    client_secret: str,
-    property_id: str,
-    now: datetime,
-    *,
-    start_date: date | None = None,
-    require_rows: bool = True,
-) -> float:
+def fetch_redventures_token(client_id: str, client_secret: str) -> str:
     token_response = requests.post(
         "https://rvmedianetwork-prod.us.auth0.com/oauth/token",
         headers={"Content-Type": "application/json"},
@@ -454,6 +447,20 @@ def fetch_redventures_ytd(
     token = token_payload.get("access_token") if isinstance(token_payload, dict) else None
     if not isinstance(token, str) or not token:
         raise ConnectorError("malformed_response")
+    return token
+
+
+def fetch_redventures_ytd(
+    client_id: str,
+    client_secret: str,
+    property_id: str,
+    now: datetime,
+    *,
+    start_date: date | None = None,
+    require_rows: bool = True,
+    access_token: str | None = None,
+) -> float:
+    token = access_token or fetch_redventures_token(client_id, client_secret)
 
     total = 0.0
     row_count = 0

@@ -23,6 +23,16 @@ function unauthorizedResponse(): Response {
 
 // ── Health ────────────────────────────────────────────────────────────────────
 
+http.route({path:'/revenue/unified/collection-run',method:'POST',handler:httpAction(async(ctx,req)=>{
+  if (!checkActivityToken(req)) return unauthorizedResponse();
+  try {
+    const result=await ctx.runMutation(internal.revenue.recordUnifiedRunInternal,await req.json());
+    return new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+  } catch {
+    return new Response(JSON.stringify({error:'Unified revenue attempt rejected'}),{status:400,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+  }
+})});
+
 for (const path of ['/revenue/monday/chunk', '/revenue/monday/complete']) {
   http.route({path, method:'POST', handler:httpAction(async (ctx, req) => {
     if (!checkActivityToken(req)) return unauthorizedResponse();
@@ -354,6 +364,7 @@ http.route({
         headers: {
           "Content-Type": "application/json",
           "Cache-Control": "no-store, max-age=0",
+          "X-Revenue-Dataset": snapshot.collectorRunId ?? 'legacy',
         },
       });
     } catch (e) {

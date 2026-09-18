@@ -208,7 +208,7 @@ def close_candidates(brand, creator, opportunities, creator_aliases):
     return candidate
 
 
-def reconcile(items, opportunities, impact, now, policy):
+def reconcile(items, opportunities, impact, now, policy, *, msn_from_monday=False):
     rows = []
     for item in items:
         columns = {c['id']: c['text'] for c in item['column_values']}
@@ -222,6 +222,8 @@ def reconcile(items, opportunities, impact, now, policy):
                'references': [], 'updatedAt': item.get('updated_at', ''), 'state': item.get('state', 'active')}
         if gross is not None:
             row['grossCents'] = gross
+        if msn_from_monday and (program.startswith('microsoftstart') or program == 'msn'):
+            row['source'] = 'msn'
         if columns.get('status6') != 'Paid In Full':
             row.update(disposition='unpaid', reason='not_paid_in_full')
         elif not valid_date(payment):
@@ -243,7 +245,15 @@ def reconcile(items, opportunities, impact, now, policy):
                     row['references'] = sorted({'impact:program:' + r['id'] for r in impact_matches})
                 else:
                     row['reason'] = 'impact_coverage_unconfirmed'
-            elif program.startswith('microsoftstart'):
+            elif program.startswith('microsoftstart') or program == 'msn':
+                if msn_from_monday:
+                    row['source'] = 'msn'
+                    if gross is None:
+                        row['reason'] = basis
+                    else:
+                        row.update(disposition='included', reason='msn_paid_monday')
+                    rows.append(row)
+                    continue
                 covered_source = 'msn'; row['references'] = ['counter:MSN:verified-lifetime-baseline-and-B9']
             elif program.startswith('moneycom'):
                 covered_source = 'adsbymoney'; row['references'] = ['adsbymoney:publisher_dashboard/campaigns']
@@ -282,6 +292,9 @@ def reconcile(items, opportunities, impact, now, policy):
     originals = {item['id']:item for item in items}
     for row in rows:
         override = policy.get('overrides', {}).get(row['itemId'])
+        # Old Counter coverage exceptions cannot override the new MSN source.
+        if msn_from_monday and row.get('source') == 'msn':
+            continue
         if not override or row['disposition'] in ('unpaid','future'):
             continue
         if override['fingerprint'] != item_fingerprint(originals[row['itemId']]):
@@ -316,7 +329,8 @@ def summarize(rows, snapshot_date):
             'totalYtdUsd': ytd/100, 'totalAllTimeUsd': lifetime/100}
 
 
-def collect(now, state_path=None, policy_path=None):
+def collect(now, state_path=None, policy_path=None, *, secrets=None, opportunities=None,
+            msn_from_monday=False, read_only=False):
     state_root = Path(os.environ.get('REVENUE_STATE_DIR', str(Path.home() / 'Library/Application Support/CreatorsAgency/revenue-collector')))
     policy_file = Path(policy_path or os.environ.get('MONDAY_REVENUE_POLICY_FILE', str(state_root / 'monday-policy.json')))
     policy = json.loads(policy_file.read_text())
@@ -343,16 +357,18 @@ def collect(now, state_path=None, policy_path=None):
         raise revenue.ConnectorError('validation')
     with ThreadPoolExecutor(max_workers=3) as pool:
         items_future = pool.submit(fetch_monday, revenue.read_secret('monday'), known)
-        close_future = pool.submit(fetch_close_evidence, revenue.read_secret('close'), now)
-        impact_future = pool.submit(fetch_impact_evidence, revenue.read_secret('impact_sid'), revenue.read_secret('impact_reporting_password'), now)
-        items, opportunities, impact = items_future.result(), close_future.result(), impact_future.result()
-    rows = reconcile(items, opportunities, impact, now, policy)
+        close_future = None if opportunities is not None else pool.submit(fetch_close_evidence, secrets.close_api_key if secrets else revenue.read_secret('close'), now)
+        impact_future = pool.submit(fetch_impact_evidence, secrets.impact_sid if secrets else revenue.read_secret('impact_sid'), secrets.impact_reporting_password if secrets else revenue.read_secret('impact_reporting_password'), now)
+        items = items_future.result()
+        opportunities = opportunities if close_future is None else close_future.result()
+        impact = impact_future.result()
+    rows = reconcile(items, opportunities, impact, now, policy, msn_from_monday=msn_from_monday)
     digest = hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     result = {'auditId': str(uuid.uuid4()), 'snapshotDate': now.date().isoformat(),
-              'fetchedAt': revenue.utc_iso(), 'ruleVersion': RULE_VERSION + ':' + policy_digest, 'digest': digest,
+              'fetchedAt': revenue.utc_iso(), 'ruleVersion': ('2026-09-18.msn-paid' if msn_from_monday else RULE_VERSION) + ':' + policy_digest, 'digest': digest,
               'closeEvidenceCount': len(opportunities), 'impactEvidenceCount': len(impact),
               'summary': summarize(rows, now.date().isoformat()), 'rows': rows}
-    if state:
+    if state and not read_only:
         state.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         temporary = state.with_suffix('.tmp')
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

@@ -11,7 +11,6 @@ SERVICE_HOME="${HOME:?HOME must be set by launchd}"
 
 VENV_PYTHON="${REVENUE_VENV_PYTHON:-$SERVICE_HOME/Services/venvs/mission-control-revenue/bin/python}"
 SECRET_LOADER="${REVENUE_SECRET_LOADER:-$SERVICE_HOME/.openclaw/workspace/scripts/secret_loader.py}"
-MSN_CREDENTIAL_FILE="${MSN_GOOGLE_SERVICE_ACCOUNT_FILE:-$SERVICE_HOME/Library/Application Support/CreatorsAgency/revenue-collector/msn-google-service-account.json}"
 LOG_DIR="${REVENUE_LOG_DIR:-$SERVICE_HOME/Library/Logs/CreatorsAgency/revenue-collector}"
 STATE_DIR="${REVENUE_STATE_DIR:-$SERVICE_HOME/Library/Application Support/CreatorsAgency/revenue-collector}"
 TELEGRAM_CHAT_ID_FILE="${REVENUE_TELEGRAM_CHAT_ID_FILE:-$STATE_DIR/telegram-chat-id}"
@@ -92,9 +91,6 @@ if [[ ! -r "$SECRET_LOADER" ]]; then
   send_failure_alert "⚠️ *revenue collector did not start*: approved secret loader is unavailable on \`$(hostname -s)\`" || true
   exit 78
 fi
-if [[ ! -r "$MSN_CREDENTIAL_FILE" ]]; then
-  log_line "collector warning: dedicated MSN credential is unavailable; continuing so the run can be recorded as degraded"
-fi
 
 # Hold an advisory lock for the life of this shell. A second scheduler or a
 # manual invocation exits instead of posting an overlapping snapshot.
@@ -112,7 +108,6 @@ for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1)); do
   if (
     cd "$REPO_ROOT" || exit 72
     PYTHONPATH="$SECRET_LOADER_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
-      MSN_GOOGLE_SERVICE_ACCOUNT_FILE="$MSN_CREDENTIAL_FILE" \
       "$VENV_PYTHON" scripts/collect_all_revenue.py
   ) >> "$COLLECTOR_LOG" 2>&1; then
     log_line "revenue collector completed OK on attempt $attempt"

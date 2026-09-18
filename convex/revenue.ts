@@ -1,4 +1,6 @@
 import { monthlyRevenueValidator } from './monthlyRevenueValidator';
+import { activePublication, unifiedReport, unifiedYtdSnapshot, unifiedHealthReport } from './unifiedRevenue';
+export { recordUnifiedRunInternal } from './unifiedRevenue';
 import { validMonthlyRevenue } from './monthlyRevenueMath';
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -105,6 +107,7 @@ export const recordAllTimeRunInternal = internalMutation({
     mondayAuditId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (await activePublication(ctx)) throw new Error('Use unified revenue ingestion');
     const existing = await ctx.db.query('revenue_all_time_runs')
       .withIndex('by_run', q => q.eq('collectorRunId', args.collectorRunId)).first();
     if (existing) return { published: existing.published, issues: existing.issues, totalAllTimeUsd: existing.totalAllTimeUsd ?? null };
@@ -131,6 +134,8 @@ export const recordAllTimeRunInternal = internalMutation({
 export const allTimeRevenueInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
+    const unified = await unifiedReport(ctx);
+    if (unified) return unified;
     const [lastAttempt, verified] = await Promise.all([
       ctx.db.query('revenue_all_time_runs').withIndex('by_received_at').order('desc').first(),
       ctx.db.query('revenue_all_time_runs').withIndex('by_published_completed', q => q.eq('published', true)).order('desc').first(),
@@ -208,6 +213,7 @@ export const recordCollectionRunInternal = internalMutation({
     mondayAuditId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<CollectorRunResult> => {
+    if (await activePublication(ctx)) throw new Error('Use unified revenue ingestion');
     const priorRun = await ctx.db
       .query("revenue_collection_runs")
       .withIndex("by_run_id", (q) => q.eq("collectorRunId", args.collectorRunId))
@@ -358,6 +364,7 @@ export const upsertLegacySnapshotInternal = internalMutation({
     sources: completeRevenueSourcesValidator,
   },
   handler: async (ctx, args): Promise<LegacySnapshotResult> => {
+    if (await activePublication(ctx)) throw new Error('Use unified revenue ingestion');
     const [verifiedSnapshot, verifiedRun] = await Promise.all([
       ctx.db
         .query("revenue_snapshots")
@@ -433,6 +440,8 @@ export const upsertLegacySnapshotInternal = internalMutation({
 export const latestSnapshotInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
+    const unified = await unifiedYtdSnapshot(ctx);
+    if (unified) return unified;
     const snapshots = await ctx.db
       .query("revenue_snapshots")
       .withIndex("by_date")
@@ -445,6 +454,8 @@ export const latestSnapshotInternal = internalQuery({
 export const latestVerifiedSnapshotInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
+    const unified = await unifiedYtdSnapshot(ctx);
+    if (unified) return unified;
     return await ctx.db
       .query("revenue_snapshots")
       .withIndex("by_verification_date", (q) =>
@@ -458,6 +469,8 @@ export const latestVerifiedSnapshotInternal = internalQuery({
 export const revenueHealthInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
+    const unified = await unifiedHealthReport(ctx);
+    if (unified) return unified;
     const nowMs = Date.now();
     const [lastAttempt, lastVerifiedSnapshot, snapshots, lastCloseDiagnostic] =
       await Promise.all([

@@ -1,5 +1,9 @@
 # Apple's all-time creator revenue
 
+> Historical design below. The unified implementation and MSN payment-source
+> replacement are documented in [UNIFIED.md](UNIFIED.md). Until its first complete
+> publication, legacy readers continue using the design below.
+
 The existing Mac Mini noon Central LaunchDaemon runs `scripts/collect_all_revenue.py`,
 which shares one Monday reconciliation between the YTD and lifetime collectors. Both use the existing process lock,
 dedicated Google reader, 1Password identities and three-attempt retry policy.
