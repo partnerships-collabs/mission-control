@@ -21,13 +21,14 @@ function store() {
         },
         order(value: string) { direction = value === 'desc' ? -1 : 1; return query; },
         async first() {
-          return [...rows].filter(row => filters.every(([key, value]) => row[key] === value))
+          return [...rows].filter(row => row._table === table && filters.every(([key, value]) => row[key] === value))
             .sort((a, b) => direction * (a[sort] < b[sort] ? -1 : a[sort] > b[sort] ? 1 : Number(a._id) - Number(b._id)))[0] ?? null;
         },
+        async unique() { return query.first(); },
       };
       return query;
     },
-    async insert(table: string, row: any) { touched.add(table); rows.push({ ...row, _id: String(rows.length) }); return String(rows.length - 1); },
+    async insert(table: string, row: any) { touched.add(table); rows.push({ ...row, _table:table, _id: String(rows.length) }); return String(rows.length - 1); },
   };
   return { ctx: { db }, rows, touched };
 }
@@ -63,7 +64,7 @@ test('complete runs publish once; failed history preserves the complete display 
   assert.equal(display.snapshot.totalAllTimeUsd, 50);
   assert.equal(display.healthy, false);
   assert.deepEqual(display.issues, ['msn_failed']);
-  assert.deepEqual([...dev.touched], ['revenue_all_time_runs'], 'Smiirl tables must remain untouched');
+  assert.deepEqual([...dev.touched], ['revenue_publication', 'revenue_all_time_runs'], 'Legacy writes must not touch Smiirl tables');
 });
 
 test('before first complete history, no total is published', async () => {

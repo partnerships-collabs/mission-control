@@ -55,6 +55,7 @@ async function checkProduction() {
   });
   const mondayStatuses = await Promise.all([
     ['/revenue/monday/audit', 'GET'], ['/revenue/monday/chunk', 'POST'], ['/revenue/monday/complete', 'POST'],
+    ['/revenue/unified/collection-run', 'POST'],
   ].map(async ([path, method]) => (await fetch(`${siteUrl}${path}`, {method, ...(method === 'POST' ? {body:'{}',headers:{'Content-Type':'application/json'}} : {}),
     redirect:'error',signal:AbortSignal.timeout(10_000)})).status));
 

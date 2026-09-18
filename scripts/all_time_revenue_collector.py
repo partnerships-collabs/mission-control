@@ -109,12 +109,15 @@ def fetch_ads_all_time(secrets, now: datetime) -> float:
 
 
 def fetch_monthly_history(secrets, now, source):
+    # One short-lived token for this capture, never persisted. Requesting a
+    # token for every historical month unnecessarily amplifies auth traffic.
+    rv_token = revenue.fetch_redventures_token(secrets.redventures_client_id, secrets.redventures_client_secret) if source == 'redventures' else None
     def month_total(bounds):
         start, end = bounds
         if source == 'impact':
             amount = revenue.fetch_impact_ytd(secrets.impact_sid, secrets.impact_reporting_password, end, start_date=start, require_rows=False)
         elif source == 'redventures':
-            amount = revenue.fetch_redventures_ytd(secrets.redventures_client_id, secrets.redventures_client_secret, revenue.REDVENTURES_PROPERTY_ID, end, start_date=start, require_rows=False)
+            amount = revenue.fetch_redventures_ytd(secrets.redventures_client_id, secrets.redventures_client_secret, revenue.REDVENTURES_PROPERTY_ID, end, start_date=start, require_rows=False, access_token=rv_token)
         else:
             amount = revenue.fetch_adsbymoney_ytd(secrets.adsbymoney_api_key, end, start_date=start, require_rows=False)
         return start.strftime('%Y-%m'), round(amount, 2)

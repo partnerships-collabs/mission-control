@@ -1,5 +1,9 @@
 # Supplemental affiliate revenue
 
+> The unified collector changes MSN from covered-by-Counter to included Monday
+> payments in its own `msn` category. See [UNIFIED.md](UNIFIED.md). Other coverage
+> rules below remain unchanged; the legacy collector retains its old behavior.
+
 The existing noon Central service runs `scripts/collect_all_revenue.py`. It reads
 CA Affiliates board `4984917746` once, reconciles it against the full won Close
 opportunity list and Impact's annual Performance by Brand reports (2020 onward),

@@ -34,6 +34,12 @@ health = health_response.json()
 smiirl_response = requests.get(f"{site_url}/revenue/smiirl", timeout=20)
 smiirl_response.raise_for_status()
 smiirl = smiirl_response.json()
+all_time_response = requests.get(
+    f"{site_url}/revenue/all-time", headers={"x-activity-secret": activity_secret}, timeout=20,
+)
+all_time_response.raise_for_status()
+all_time = all_time_response.json()
+snapshot = all_time.get("snapshot") or {}
 
 display = health.get("displaySnapshot") or {}
 total = display.get("totalYtdUsd")
@@ -42,6 +48,10 @@ expected_number = math.floor(float(total) + 0.5) if isinstance(total, (int, floa
 last_attempt = health.get("lastAttempt") or {}
 
 summary = {
+    "datasetId": health.get("datasetId"),
+    "allTimeDatasetId": snapshot.get("datasetId"),
+    "allTimeHealthy": all_time.get("healthy"),
+    "totalAllTimeUsd": snapshot.get("totalAllTimeUsd"),
     "healthy": health.get("healthy"),
     "displayStatus": health.get("displayStatus"),
     "snapshotDate": display.get("snapshotDate"),
@@ -61,4 +71,12 @@ if health.get("healthy") is not True:
     raise SystemExit("revenue health is not healthy")
 if expected_number is None or displayed_number != expected_number:
     raise SystemExit("Smiirl number does not match the verified snapshot")
+if not health.get("datasetId") or health["datasetId"] != snapshot.get("datasetId") or health["datasetId"] != smiirl_response.headers.get("X-Revenue-Dataset"):
+    raise SystemExit("Consumers do not share the same verified dataset; retry if publication occurred during this check")
+if all_time.get("healthy") is not health.get("healthy") or snapshot.get("totalYtdUsd") != total:
+    raise SystemExit("Unified revenue health or YTD totals disagree")
+monthly_ytd_cents = sum(round(amount * 100) for row in snapshot["monthly"]["months"]
+                        if row["month"].startswith(snapshot["snapshotDate"][:4]) for amount in row["sources"].values())
+if monthly_ytd_cents != round(total * 100):
+    raise SystemExit("CA HQ monthly YTD does not equal Smiirl YTD")
 PY

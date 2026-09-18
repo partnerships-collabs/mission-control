@@ -2,6 +2,7 @@ import { monthlyRevenueValidator } from './monthlyRevenueValidator';
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { mondayRowValidator, mondaySummaryValidator } from './mondayRevenueMath';
+import { unifiedRunFields, unifiedSnapshotValidator } from './unifiedRevenueModel';
 
 const revenueSourceHealthEntry = v.object({
   status: v.union(v.literal("success"), v.literal("failed")),
@@ -22,6 +23,11 @@ const revenueSourceHealth = v.object({
 
 export default defineSchema(
   {
+    revenue_unified_runs: defineTable({...unifiedRunFields, receivedAt:v.number(), verified:v.boolean(), published:v.boolean(),
+      issues:v.array(v.string()), snapshot:v.optional(unifiedSnapshotValidator)})
+      .index('by_run',['collectorRunId']).index('by_received_at',['receivedAt']),
+    revenue_publication: defineTable({key:v.literal('active'), publishedRunId:v.id('revenue_unified_runs'),
+      latestAttemptId:v.id('revenue_unified_runs')}).index('by_key',['key']),
     revenue_monday_chunks: defineTable({ auditId:v.string(), index:v.number(), rows:v.array(mondayRowValidator) })
       .index('by_audit_chunk', ['auditId','index']),
     revenue_monday_audits: defineTable({ auditId:v.string(), snapshotDate:v.string(), fetchedAt:v.string(), ruleVersion:v.string(),
