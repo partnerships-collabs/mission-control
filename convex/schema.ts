@@ -3,6 +3,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { mondayRowValidator, mondaySummaryValidator } from './mondayRevenueMath';
 import { unifiedRunFields, unifiedSnapshotValidator } from './unifiedRevenueModel';
+import {closeFact,reconciliationFact,realtimeProvenance} from './realtimeRevenueModel';
 
 const revenueSourceHealthEntry = v.object({
   status: v.union(v.literal("success"), v.literal("failed")),
@@ -23,8 +24,20 @@ const revenueSourceHealth = v.object({
 
 export default defineSchema(
   {
+    revenue_close_captures:defineTable({runId:v.string(),index:v.number(),facts:v.array(closeFact)}).index('by_run_index',['runId','index']),
+    revenue_reconciliation_chunks:defineTable({auditId:v.string(),kind:v.union(v.literal('monday'),v.literal('close')),index:v.number(),
+      items:v.array(reconciliationFact),close:v.array(closeFact)}).index('by_audit_kind_index',['auditId','kind','index']),
+    revenue_reconciliation:defineTable({auditId:v.string(),itemChunks:v.number(),closeChunks:v.number(),creatorAliases:v.record(v.string(),v.string())})
+      .index('by_audit',['auditId']),
+    revenue_close_events:defineTable({key:v.string(),receivedAt:v.number()}).index('by_key',['key']).index('by_received',['receivedAt']),
+    revenue_realtime:defineTable({key:v.literal('active'),mode:v.union(v.literal('off'),v.literal('shadow'),v.literal('live')),
+      organizationId:v.string(),subscriptionId:v.string(),requested:v.number(),processed:v.number(),failures:v.number(),
+      baselineId:v.optional(v.id('revenue_unified_runs')),dailyAttemptId:v.optional(v.id('revenue_unified_runs')),
+      lease:v.optional(v.string()),leaseUntil:v.optional(v.number()),scheduled:v.optional(v.id('_scheduled_functions')),
+      retryAt:v.optional(v.number()),lastEventAt:v.optional(v.number()),lastSuccessAt:v.optional(v.number()),error:v.optional(v.string()),
+      shadowRunId:v.optional(v.string()),publishedDate:v.optional(v.string())}).index('by_key',['key']),
     revenue_unified_runs: defineTable({...unifiedRunFields, receivedAt:v.number(), verified:v.boolean(), published:v.boolean(),
-      issues:v.array(v.string()), snapshot:v.optional(unifiedSnapshotValidator)})
+      issues:v.array(v.string()), snapshot:v.optional(unifiedSnapshotValidator),provenance:v.optional(realtimeProvenance)})
       .index('by_run',['collectorRunId']).index('by_received_at',['receivedAt']),
     revenue_publication: defineTable({key:v.literal('active'), publishedRunId:v.id('revenue_unified_runs'),
       latestAttemptId:v.id('revenue_unified_runs')}).index('by_key',['key']),

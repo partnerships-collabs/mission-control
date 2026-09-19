@@ -30,7 +30,7 @@ export const completeAuditInternal = internalMutation({
     }
     const fetched = Date.parse(args.fetchedAt);
     if (!/^[a-f0-9]{64}$/.test(args.digest) || !Number.isFinite(fetched) || fetched > Date.now()+300_000 || fetched < Date.now()-3_600_000
-      || args.closeEvidenceCount < 1 || args.impactEvidenceCount < 1 || !args.ruleVersion) throw new Error('Incomplete evidence');
+      || !Number.isSafeInteger(args.closeEvidenceCount) || args.closeEvidenceCount < 0 || args.impactEvidenceCount < 1 || !args.ruleVersion) throw new Error('Incomplete evidence');
     const chunks = await ctx.db.query('revenue_monday_chunks').withIndex('by_audit_chunk', q => q.eq('auditId', args.auditId)).collect();
     if (!chunks.length || chunks.some((c,i) => c.index !== i || (i < chunks.length-1 && c.rows.length !== 100))) throw new Error('Incomplete chunks');
     const summary = summarizeMondayRows(chunks.flatMap(c => c.rows), args.snapshotDate);

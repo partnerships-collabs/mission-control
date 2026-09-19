@@ -150,8 +150,6 @@ def fetch_close_evidence(key, now):
         if not data['data']:
             raise revenue.ConnectorError('validation')
         offset += 100
-    if not rows:
-        raise revenue.ConnectorError('empty_data')
     return rows
 
 
@@ -329,6 +327,41 @@ def summarize(rows, snapshot_date):
             'totalYtdUsd': ytd/100, 'totalAllTimeUsd': lifetime/100}
 
 
+def reconciliation_inputs(items, impact, policy):
+    """Minimal immutable facts for server-side reclassification; no credentials.
+
+    Decimal conversion and private-override fingerprints stay in this collector.
+    All Close matching, date eligibility, duplicate detection and overrides are
+    reevaluated by the server against these exact captured facts.
+    """
+    result = []
+    for item in items:
+        columns = {c['id']: c['text'] for c in item['column_values']}
+        gross, basis = gross_amount(columns)
+        brand, creator = program_and_creator(item['name'])
+        program = normalized(brand)
+        check = IMPACT_ALIASES.get(program, program)
+        refs = sorted({'impact:program:' + r['id'] for r in impact if r['grossCents'] != 0 and (
+            normalized(r['name']) == check or re.match(r'^' + re.escape(brand) + r'\b', r['name'], re.I)
+            or (program in IMPACT_ALIASES and normalized(r['name']).startswith(check)))})
+        row = {'itemId': item['id'], 'name': item['name'], 'invoice': columns.get('invoice__0', ''),
+               'paymentDate': columns.get('date', ''), 'periodDate': columns.get('date4', ''),
+               'basis': basis, 'updatedAt': item.get('updated_at', ''), 'state': item.get('state', 'active'),
+               'paid': columns.get('status6') == 'Paid In Full', 'impactLabel': columns.get('label') == 'Impact',
+               'impactRefs': refs, 'closeNotes': columns.get('text0', ''),
+               'supplemental': program in policy['programs']}
+        if gross is not None:
+            row['grossCents'] = gross
+        override = policy.get('overrides', {}).get(item['id'])
+        if override:
+            row['override'] = {'matches': override['fingerprint'] == item_fingerprint(item),
+                               'disposition': override['disposition'], 'references': override['references']}
+            if 'source' in override:
+                row['override']['source'] = override['source']
+        result.append(row)
+    return {'items': result, 'creatorAliases': policy['creatorAliases']}
+
+
 def collect(now, state_path=None, policy_path=None, *, secrets=None, opportunities=None,
             msn_from_monday=False, read_only=False):
     state_root = Path(os.environ.get('REVENUE_STATE_DIR', str(Path.home() / 'Library/Application Support/CreatorsAgency/revenue-collector')))
@@ -368,6 +401,8 @@ def collect(now, state_path=None, policy_path=None, *, secrets=None, opportuniti
               'fetchedAt': revenue.utc_iso(), 'ruleVersion': ('2026-09-18.msn-paid' if msn_from_monday else RULE_VERSION) + ':' + policy_digest, 'digest': digest,
               'closeEvidenceCount': len(opportunities), 'impactEvidenceCount': len(impact),
               'summary': summarize(rows, now.date().isoformat()), 'rows': rows}
+    if msn_from_monday:
+        result['reconciliationInputs'] = reconciliation_inputs(items, impact, policy)
     if state and not read_only:
         state.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         temporary = state.with_suffix('.tmp')
@@ -386,7 +421,27 @@ def post_audit(result, secret):
         }, timeout=60)
         response.raise_for_status()
     response = requests.post(revenue.SITE_URL + '/revenue/monday/complete', headers=header,
-                             json={k:v for k,v in result.items() if k != 'rows'}, timeout=60)
+                             json={k:v for k,v in result.items() if k not in ('rows', 'reconciliationInputs', 'closeFacts')}, timeout=60)
     response.raise_for_status()
     if response.json().get('summary') != result['summary']:
         raise revenue.ConnectorError('validation')
+
+
+def post_reconciliation_evidence(audit, secret):
+    header = {'x-activity-secret': secret}
+    inputs = audit['reconciliationInputs']
+    counts = {}
+    for kind, values in [('monday', inputs['items']), ('close', audit['closeFacts'])]:
+        counts[kind] = (len(values) + 99) // 100
+        for offset in range(0, len(values), 100):
+            response = requests.post(revenue.SITE_URL + '/revenue/reconciliation/chunk', headers=header, json={
+                'auditId': audit['auditId'], 'kind': kind, 'index': offset//100,
+                'items': values[offset:offset+100] if kind == 'monday' else [],
+                'close': values[offset:offset+100] if kind == 'close' else [],
+            }, timeout=60)
+            response.raise_for_status()
+    response = requests.post(revenue.SITE_URL + '/revenue/reconciliation/complete', headers=header, json={
+        'auditId': audit['auditId'], 'itemChunks': counts['monday'], 'closeChunks': counts['close'],
+        'creatorAliases': inputs['creatorAliases'],
+    }, timeout=60)
+    response.raise_for_status()

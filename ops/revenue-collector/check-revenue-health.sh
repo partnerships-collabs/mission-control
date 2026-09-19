@@ -59,9 +59,11 @@ summary = {
     "smiirlNumber": displayed_number,
     "lastAttemptPublished": last_attempt.get("published"),
     "lastAttemptVerificationStatus": last_attempt.get("verificationStatus"),
+    "refresh": health.get("refresh"),
+    "queue": health.get("queue"),
     "sourceFreshness": {
         name: details.get("freshness")
-        for name, details in (last_attempt.get("sourceHealth") or {}).items()
+        for name, details in (snapshot.get("sourceHealth") or {}).items()
         if isinstance(details, dict)
     },
 }
