@@ -11,6 +11,7 @@ export const unifiedRunFields = {
   collectorRunId:v.string(), snapshotDate:v.string(), collectorStartedAt:v.string(), collectorCompletedAt:v.string(),
   mode:v.union(v.literal('shadow'),v.literal('publish')), goalUsd:v.number(), sourceHealth:unifiedHealth,
   mondayAuditId:v.optional(v.string()),
+  evidenceId:v.optional(v.string()),
   closeDays:v.array(v.object({date:v.string(),amountCents:v.number()})),
   platformMonths:v.array(v.object({month:v.string(),impactCents:v.number(),redventuresCents:v.number(),adsbymoneyCents:v.number()})),
 };

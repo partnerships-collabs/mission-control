@@ -39,7 +39,7 @@ def close_days(opportunities, now):
         if days[won] > 9_007_199_254_740_991:
             raise revenue.ConnectorError('validation')
     if not ids:
-        raise revenue.ConnectorError('empty_data')
+        days[now.date().isoformat()] = 0
     return [{'date': day, 'amountCents': days[day]} for day in sorted(days)]
 
 
@@ -102,6 +102,12 @@ def collect_payload(*, dry_run=False, now=None, mode='publish'):
     }
     if audit is not None:
         payload['mondayAuditId'] = audit['auditId']
+        if 'reconciliationInputs' in audit:
+            payload['evidenceId'] = audit['auditId']
+            audit['closeFacts'] = [{**{k: d[k] for k in ('id', 'date_won', 'value', 'value_currency', 'value_period')},
+                'lead_name': d.get('lead_name') or '', 'note': d.get('note') or '',
+                'creators': [v for k, values in d.items() if k.startswith('custom.') and isinstance(values, list)
+                             for v in values if isinstance(v, str)]} for d in opportunities]
     return payload, audit, secrets, successful
 
 
@@ -121,6 +127,8 @@ def main(dry_run=False, mode='publish'):
         if audit is not None:
             try:
                 monday.post_audit(audit, secrets.activity_secret)
+                if payload.get('evidenceId'):
+                    monday.post_reconciliation_evidence(audit, secrets.activity_secret)
             except Exception as error:
                 # Audit persistence is required evidence. Report the failure so
                 # neither consumer appears freshly verified after a failed upload.
@@ -129,13 +137,14 @@ def main(dry_run=False, mode='publish'):
                     payload['sourceHealth'][source] = revenue.SourceHealth(None, 'failed', revenue.utc_iso(), False,
                         revenue.controlled_error_message(error)).to_payload()
                 payload.pop('mondayAuditId', None)
+                payload.pop('evidenceId', None)
                 payload.update(closeDays=[], platformMonths=[], collectorCompletedAt=revenue.utc_iso())
         response = revenue.requests.post(revenue.SITE_URL + '/revenue/unified/collection-run',
                     headers={'x-activity-secret': secrets.activity_secret}, json=payload, timeout=60)
         response.raise_for_status()
         result = response.json()
         print(json.dumps(result, sort_keys=True))
-        return 0 if successful and result.get('verified') and (mode == 'shadow' or result.get('published')) else 1
+        return 0 if successful and result.get('verified') and (mode == 'shadow' or result.get('published') or result.get('queued')) else 1
     except Exception as error:
         revenue.log.error('Unified ingestion failed: %s', revenue.controlled_error_message(error))
         return 1

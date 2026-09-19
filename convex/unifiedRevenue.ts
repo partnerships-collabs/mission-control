@@ -3,6 +3,10 @@ import type { QueryCtx, MutationCtx } from './_generated/server';
 import { unifiedRunFields } from './unifiedRevenueModel';
 import { evaluateUnifiedAttempt, UNIFIED_SOURCES } from './unifiedRevenueMath';
 import { revenueScheduleHealth, revenueSourceFreshness, safeRevenueSourceError } from './revenueMath';
+import {readEvidence} from './revenueEvidence';
+import {assertOverrideEvidenceStable,deriveCloseDays,reconcileMonday} from './reconcileMonday';
+import {realtimeState,scheduleRefresh} from './realtimeRevenue';
+import {chicagoDate} from './realtimeRevenueModel';
 
 type ReadCtx = Pick<QueryCtx,'db'> | Pick<MutationCtx,'db'>;
 export const activePublication = (ctx:ReadCtx) => ctx.db.query('revenue_publication').withIndex('by_key',q=>q.eq('key','active')).unique();
@@ -27,30 +31,50 @@ export const recordUnifiedRunInternal = internalMutation({
       const prior=Object.fromEntries(Object.keys(unifiedRunFields).filter(k=>k in existing).map(k=>[k,existing[k as keyof typeof existing]]));
       if (canonical(input)!==canonical(prior)) throw new Error('Conflicting run ID');
       return {runId:existing.collectorRunId,verified:existing.verified,published:existing.published,issues:existing.issues,
+        queued:existing.verified&&existing.mode==='publish'&&!existing.published,
         totalYtdUsd:existing.snapshot?.totalYtdUsd??null,totalAllTimeUsd:existing.snapshot?.totalAllTimeUsd??null};
     }
     const receivedAt=Date.now();
     const audit=args.mondayAuditId?await ctx.db.query('revenue_monday_audits').withIndex('by_audit',q=>q.eq('auditId',args.mondayAuditId!)).unique():null;
     const chunks=audit?await ctx.db.query('revenue_monday_chunks').withIndex('by_audit_chunk',q=>q.eq('auditId',audit.auditId)).collect():[];
     const result=evaluateUnifiedAttempt(input,chunks.flatMap(c=>c.rows),receivedAt);
+    const realtime=await realtimeState(ctx);
+    if(args.evidenceId){
+      try{
+        if(args.evidenceId!==args.mondayAuditId)throw Error('evidence_audit_mismatch');
+        const evidence=await readEvidence(ctx,args.evidenceId);
+        const prior=realtime?.baselineId?await ctx.db.get(realtime.baselineId):null;
+        if(prior?.evidenceId){const previous=await readEvidence(ctx,prior.evidenceId);assertOverrideEvidenceStable(evidence.items,evidence.close,previous.close);}
+        const rows=reconcileMonday(evidence.items,evidence.close,evidence.creatorAliases,args.snapshotDate);
+        if(canonical(rows)!==canonical(chunks.flatMap(c=>c.rows))||canonical(deriveCloseDays(evidence.close,args.snapshotDate))!==canonical(args.closeDays))throw Error('reconciliation_parity_failed');
+      }catch{result.issues.push('reconciliation_evidence_invalid');}
+    }
     if (!audit || audit.snapshotDate!==args.snapshotDate || !audit.ruleVersion.startsWith('2026-09-18.msn-paid:')
         || audit.fetchedAt!==sourceHealth.msn.fetchedAt || audit.fetchedAt!==sourceHealth.monday_affiliates.fetchedAt) result.issues.push('monday_audit_mismatch');
     const publication=await activePublication(ctx);
+    if(realtime?.mode==='live'&&!args.evidenceId&&args.mode==='publish')result.issues.push('reconciliation_evidence_required');
     const lastAttempt=publication?await ctx.db.get(publication.latestAttemptId):null;
     // A delayed old run may never replace a newer failure or verified dataset.
     const clockValid=!result.issues.some(issue=>['invalid_collection_time','invalid_snapshot_date','invalid_utc_timestamp'].includes(issue));
-    const ordered=clockValid && (!lastAttempt || Date.parse(args.collectorStartedAt)>Date.parse(lastAttempt.collectorStartedAt));
+    const dailyPrior=realtime?.dailyAttemptId?await ctx.db.get(realtime.dailyAttemptId):null;
+    const orderingBase=realtime?.mode==='live'?dailyPrior:lastAttempt;
+    const ordered=clockValid && (!orderingBase || Date.parse(args.collectorStartedAt)>Date.parse(orderingBase.collectorStartedAt));
     if (clockValid && !ordered && args.mode==='publish') result.issues.push('out_of_order_run');
     const verified=result.issues.length===0;
-    const published=verified && args.mode==='publish';
+    const queued=verified&&args.mode==='publish'&&realtime?.mode==='live';
+    const published=verified && args.mode==='publish'&&!queued;
     const id=await ctx.db.insert('revenue_unified_runs',{...input,receivedAt,verified,published,issues:result.issues,
       ...(verified && result.snapshot?{snapshot:result.snapshot}:{})});
     // One transactional pointer controls BOTH consumers. No dual publication.
-    if (args.mode==='publish' && ordered) {
+    if (args.mode==='publish' && ordered && realtime) {
+      await ctx.db.patch(realtime._id,{dailyAttemptId:id,...(verified&&args.evidenceId?{baselineId:id,requested:realtime.requested+1}:{} )});
+      if(verified&&args.evidenceId)await scheduleRefresh(ctx,0);
+    }
+    if (args.mode==='publish' && ordered && realtime?.mode!=='live') {
       if (publication) await ctx.db.patch(publication._id,{latestAttemptId:id,...(published?{publishedRunId:id}:{})});
       else if (published) await ctx.db.insert('revenue_publication',{key:'active',publishedRunId:id,latestAttemptId:id});
     }
-    return {runId:args.collectorRunId,verified,published,issues:result.issues,
+    return {runId:args.collectorRunId,verified,published,queued:Boolean(queued),issues:result.issues,
       totalYtdUsd:verified?result.snapshot!.totalYtdUsd:null,totalAllTimeUsd:verified?result.snapshot!.totalAllTimeUsd:null};
   },
 });
@@ -63,16 +87,24 @@ export async function unifiedReport(ctx:ReadCtx) {
   const audit=await ctx.db.query('revenue_monday_audits').withIndex('by_audit',q=>q.eq('auditId',run.mondayAuditId!)).unique();
   if (!audit) throw new Error('Unified audit unavailable');
   const now=Date.now();
-  const schedule=revenueScheduleHealth(run.snapshotDate,new Date(now));
+  const realtime=await realtimeState(ctx);
+  const dailyAttempt=realtime?.dailyAttemptId?await ctx.db.get(realtime.dailyAttemptId):null;
+  const schedule=revenueScheduleHealth(run.provenance?chicagoDate(Date.parse(run.provenance.lastFullRefreshAt)):run.snapshotDate,new Date(now));
   const sourceHealth=Object.fromEntries(UNIFIED_SOURCES.map(key=>[key,{...run.sourceHealth[key],
-    freshness:revenueSourceFreshness(run.sourceHealth[key],now),connection:key==='msn'?'monday_affiliates':key}]));
+    freshness:revenueSourceFreshness({...run.sourceHealth[key],...(run.provenance?{reused:false}:{})},now),
+    ...(run.provenance&&dailyAttempt?{lastDailyStatus:dailyAttempt.sourceHealth[key].status}:{}),connection:key==='msn'?'monday_affiliates':key}]));
   const fresh=UNIFIED_SOURCES.every(key=>sourceHealth[key].freshness==='fresh');
-  const issues=[...attempt.issues,...(!schedule.lastAttemptOnSchedule?['scheduled_update_missing']:[]),...(!fresh?['sources_stale']:[])];
+  const live=Boolean(run.provenance);
+  const closeError=live&&realtime?.mode!=='off'?realtime?.error:undefined;
+  const issues=[...attempt.issues,...(live&&dailyAttempt&&!dailyAttempt.verified?dailyAttempt.issues:[]),
+    ...(closeError?['close_refresh_failed']:[]),...(!schedule.lastAttemptOnSchedule?['scheduled_update_missing']:[]),...(!fresh?['sources_stale']:[])];
   const snapshot={...run.snapshot, datasetId:run.collectorRunId, msnSource:'monday_paid' as const,
     snapshotDate:run.snapshotDate,collectorStartedAt:run.collectorStartedAt,collectorCompletedAt:run.collectorCompletedAt,
     goalUsd:run.goalUsd,verifiedAt:run.receivedAt,sourceHealth,
+    ...(run.provenance?{refresh:{...run.provenance,closePending:Boolean(realtime&&realtime.requested>realtime.processed),
+      closeError:closeError??null,mode:realtime?.mode??'off',allSourcesCurrent:issues.length===0}}:{}),
     monday:{auditId:audit.auditId,fetchedAt:audit.fetchedAt,ruleVersion:audit.ruleVersion,summary:audit.summary}};
-  return {healthy:attempt.published && schedule.lastAttemptOnSchedule && fresh,issues,schedule,snapshot,
+  return {healthy:attempt.published && issues.length===0,issues,schedule,snapshot,
     lastAttempt:{collectorRunId:attempt.collectorRunId,snapshotDate:attempt.snapshotDate,
       collectorStartedAt:attempt.collectorStartedAt,collectorCompletedAt:attempt.collectorCompletedAt,
       published:attempt.published,verificationStatus:attempt.verified?'verified':'degraded',
@@ -95,7 +127,12 @@ export async function unifiedHealthReport(ctx:ReadCtx) {
   const report=await unifiedReport(ctx);
   if (!report) return null;
   const s=report.snapshot;
+  const queue=await realtimeState(ctx);
   return {healthy:report.healthy,issues:report.issues,schedule:report.schedule,datasetId:s.datasetId,
+    ...(s.refresh?{refresh:s.refresh}:{}),
+    queue:queue?{mode:queue.mode,pending:queue.requested>queue.processed,requestedVersion:queue.requested,processedVersion:queue.processed,
+      failures:queue.failures,error:queue.error??null,lastEventAt:queue.lastEventAt??null,lastSuccessAt:queue.lastSuccessAt??null,
+      leaseUntil:queue.leaseUntil??null,retryAt:queue.retryAt??null,scheduled:Boolean(queue.scheduled)}:{mode:'off'},
     displayStatus:'verified',displaySnapshot:{snapshotDate:s.snapshotDate,totalYtdUsd:s.totalYtdUsd,updatedAt:s.verifiedAt,datasetId:s.datasetId},
     lastAttempt:report.lastAttempt,lastVerifiedSnapshot:{snapshotDate:s.snapshotDate,totalYtdUsd:s.totalYtdUsd,
       totalAllTimeUsd:s.totalAllTimeUsd,verifiedAt:s.verifiedAt,collectorRunId:s.datasetId,
