@@ -23,6 +23,27 @@ function unauthorizedResponse(): Response {
 
 // ── Health ────────────────────────────────────────────────────────────────────
 
+for(const path of ['/revenue/reconciliation/chunk','/revenue/reconciliation/complete','/revenue/realtime/configure']){
+  http.route({path,method:'POST',handler:httpAction(async(ctx,req)=>{
+    if(!checkActivityToken(req))return unauthorizedResponse();
+    try{
+      const body=await req.json();
+      const result=path.endsWith('/chunk')?await ctx.runMutation(internal.revenue.evidenceChunk,body)
+        :path.endsWith('/complete')?await ctx.runMutation(internal.revenue.evidenceComplete,body)
+        :await ctx.runMutation(internal.revenue.configureRealtime,body);
+      return new Response(JSON.stringify(result??{ok:true}),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+    }catch{return new Response(JSON.stringify({error:'Revenue operation rejected'}),{status:400});}
+  })});
+}
+http.route({path:'/revenue/realtime/status',method:'GET',handler:httpAction(async(ctx,req)=>{
+  if(!checkActivityToken(req))return unauthorizedResponse();
+  return new Response(JSON.stringify(await ctx.runQuery(internal.revenue.realtimeStatus,{})),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+})});
+http.route({path:'/revenue/realtime/shadow',method:'GET',handler:httpAction(async(ctx,req)=>{
+  if(!checkActivityToken(req))return unauthorizedResponse();
+  return new Response(JSON.stringify(await ctx.runQuery(internal.realtimeRevenue.realtimeShadowReport,{})),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+})});
+
 http.route({path:'/revenue/unified/collection-run',method:'POST',handler:httpAction(async(ctx,req)=>{
   if (!checkActivityToken(req)) return unauthorizedResponse();
   try {
@@ -434,7 +455,9 @@ http.route({
     }
 
     let payload: {
+      subscription_id?:string;
       event?: {
+        id?:string;organization_id?:string;date_updated?:string;date_created?:string;
         object_type?: string;
         action?: string;
         data?: Record<string, unknown>;
@@ -449,35 +472,20 @@ http.route({
     }
 
     const event = payload.event ?? {};
-    const statusType = event.data?.status_type;
-    const previousStatusType = event.previous_data?.status_type;
-    const affectsWonRevenue =
-      event.object_type === "opportunity" &&
-      (statusType === "won" || previousStatusType === "won");
-
-    if (!affectsWonRevenue) {
-      console.log(
-        `[close-webhook] no won-revenue change for object_type="${event.object_type}" action="${event.action}"`,
-      );
-      return new Response("ok", { status: 200 });
-    }
-
     try {
-      const result = await ctx.runAction(
-        internal.revenue.refreshCloseDiagnosticInternal,
-        {},
-      );
-      console.log("[close-webhook] non-authoritative Close diagnostic complete:", result);
+      const result = await ctx.runMutation(internal.revenue.enqueueCloseEvent,{
+        subscriptionId:payload.subscription_id??'',organizationId:event.organization_id??'',eventId:event.id??'',
+        revision:event.date_updated??event.date_created??'',objectType:event.object_type??'',action:event.action??'',
+      });
       return new Response(JSON.stringify({ ok: true, ...result }), {
         headers: { "Content-Type": "application/json" },
       });
     } catch (e) {
       console.error(
-        "[close-webhook] Close diagnostic failed:",
-        e instanceof Error ? e.message : String(e),
+        "[close-webhook] enqueue failed",
       );
       // Close retries failed webhook deliveries, so surface refresh failures.
-      return new Response("Close diagnostic failed", { status: 500 });
+      return new Response("Close refresh could not be queued", { status: 503 });
     }
   }),
 });
