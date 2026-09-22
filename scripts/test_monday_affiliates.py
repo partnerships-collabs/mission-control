@@ -96,7 +96,7 @@ class ReconciliationTests(unittest.TestCase):
             def __init__(self):self.headers={}
             def post(self,*args,**kwargs):
                 data=responses.pop(0)
-                return type('R',(),{'raise_for_status':lambda self:None,'json':lambda self:{'data':data}})()
+                return type('R',(),{'status_code':200,'raise_for_status':lambda self:None,'json':lambda self:{'data':data}})()
         with patch.object(m.requests,'Session',Session,create=True):
             self.assertEqual(len(m.fetch_monday('test',['9'])),2)
         responses.extend([{'boards':[{'columns':[{'id':k,'type':v} for k,v in m.COLUMNS.items()],

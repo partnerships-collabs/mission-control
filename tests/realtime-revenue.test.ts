@@ -5,7 +5,7 @@ import {reconcileMonday,deriveCloseDays,assertOverrideEvidenceStable} from '../c
 import {chicagoDate,canonical} from '../convex/realtimeRevenueModel';
 import {configureRealtime,enqueueCloseEvent,claimCloseRefresh,finishCloseRefresh,failCloseRefresh,recoverCloseQueue,fetchCloseFacts} from '../convex/realtimeRevenue';
 import {evidenceChunk,evidenceComplete} from '../convex/revenueEvidence';
-import {recordUnifiedRunInternal,unifiedReport,unifiedHealthReport} from '../convex/unifiedRevenue';
+import {recordUnifiedRunInternal,recordIngestionReceipt,unifiedReport,unifiedHealthReport} from '../convex/unifiedRevenue';
 import {deriveUnifiedSnapshot,UNIFIED_SOURCES} from '../convex/unifiedRevenueMath';
 import {summarizeMondayRows} from '../convex/mondayRevenueMath';
 
@@ -14,6 +14,30 @@ const fact=(values:any={})=>({id:'oppo_one',date_won:chicagoDate(),value:10000,v
 const item=(values:any={})=>({itemId:'1',name:'MSN x Creator',invoice:'1',paymentDate:chicagoDate(),periodDate:'',grossCents:10000,basis:'gross',updatedAt:'',state:'active',paid:true,impactLabel:false,impactRefs:[],closeNotes:'',supplemental:false,...values});
 const identity={organizationId:'orga_test',subscriptionId:'whsub_test'};
 const event=(values:any={})=>({...identity,eventId:'ev_test',revision:new Date().toISOString(),objectType:'opportunity',action:'updated',...values});
+
+test('override evidence preparation is linear rather than repeated per Monday exception',()=>{
+  let reads=0;
+  const facts=Array.from({length:1500},(_,i)=>{
+    const row=fact({id:'oppo_'+i});
+    Object.defineProperty(row,'lead_name',{enumerable:true,get(){reads++;return 'Snap';}});
+    return row;
+  });
+  const items=Array.from({length:250},(_,i)=>item({itemId:String(i),name:'Snap x Creator',override:{matches:true,
+    disposition:'included',references:['reviewed:'+i]}}));
+  assertOverrideEvidenceStable(items,facts,facts);
+  assert.ok(reads<=facts.length*6,'each fact is normalized/canonicalized only once per capture');
+  assert.throws(()=>assertOverrideEvidenceStable(items,[...facts,fact({id:'new'})],facts),/requires_review/);
+  assert.doesNotThrow(()=>assertOverrideEvidenceStable(items,[...facts,fact({id:'unrelated',lead_name:'Other',note:'Other'})],facts));
+});
+
+test('a fresh Close publication cannot hide a failed daily upload receipt',async()=>{
+  const dev=store();await dev.initialize();await call(configureRealtime,dev.ctx,{...identity,mode:'live'});await dev.refresh();
+  await call(recordIngestionReceipt,dev.ctx,{collectorRunId:crypto.randomUUID(),startedAt:Date.now(),status:'rejected',code:'execution_limit',origin:'scheduled'});
+  await call(enqueueCloseEvent,dev.ctx,event({eventId:'ev_later'}));await dev.refresh();
+  const report=await unifiedReport(dev.ctx);
+  assert.ok(report!.issues.includes('collection_upload_failed'));
+  assert.equal(report!.snapshot.refresh!.allSourcesCurrent,false);
+});
 
 // Isolated transactional handler harness: no live deployment or credentials.
 function store(){

@@ -78,7 +78,7 @@ def gross_amount(columns):
 
 
 def _get(session, url, **kwargs):
-    response = session.get(url, timeout=60, **kwargs)
+    response = revenue.request_with_retry(session.get, url, timeout=60, **kwargs)
     response.raise_for_status()
     return response.json()
 
@@ -88,7 +88,7 @@ def fetch_monday(key, known_ids=()):
     session.headers.update({'Authorization': key, 'API-Version': '2026-04'})
 
     def query(q, variables=None):
-        response = session.post('https://api.monday.com/v2', json={'query': q, 'variables': variables or {}}, timeout=60)
+        response = revenue.request_with_retry(session.post, 'https://api.monday.com/v2', json={'query': q, 'variables': variables or {}}, timeout=60)
         response.raise_for_status()
         data = response.json()
         if data.get('errors') or not isinstance(data.get('data'), dict):
@@ -416,11 +416,11 @@ def collect(now, state_path=None, policy_path=None, *, secrets=None, opportuniti
 def post_audit(result, secret):
     header = {'x-activity-secret': secret}
     for offset in range(0, len(result['rows']), 100):
-        response = requests.post(revenue.SITE_URL + '/revenue/monday/chunk', headers=header, json={
+        response = revenue.request_with_retry(requests.post, revenue.SITE_URL + '/revenue/monday/chunk', headers=header, json={
             'auditId': result['auditId'], 'index': offset//100, 'rows': result['rows'][offset:offset+100],
         }, timeout=60)
         response.raise_for_status()
-    response = requests.post(revenue.SITE_URL + '/revenue/monday/complete', headers=header,
+    response = revenue.request_with_retry(requests.post, revenue.SITE_URL + '/revenue/monday/complete', headers=header,
                              json={k:v for k,v in result.items() if k not in ('rows', 'reconciliationInputs', 'closeFacts')}, timeout=60)
     response.raise_for_status()
     if response.json().get('summary') != result['summary']:
@@ -434,13 +434,13 @@ def post_reconciliation_evidence(audit, secret):
     for kind, values in [('monday', inputs['items']), ('close', audit['closeFacts'])]:
         counts[kind] = (len(values) + 99) // 100
         for offset in range(0, len(values), 100):
-            response = requests.post(revenue.SITE_URL + '/revenue/reconciliation/chunk', headers=header, json={
+            response = revenue.request_with_retry(requests.post, revenue.SITE_URL + '/revenue/reconciliation/chunk', headers=header, json={
                 'auditId': audit['auditId'], 'kind': kind, 'index': offset//100,
                 'items': values[offset:offset+100] if kind == 'monday' else [],
                 'close': values[offset:offset+100] if kind == 'close' else [],
             }, timeout=60)
             response.raise_for_status()
-    response = requests.post(revenue.SITE_URL + '/revenue/reconciliation/complete', headers=header, json={
+    response = revenue.request_with_retry(requests.post, revenue.SITE_URL + '/revenue/reconciliation/complete', headers=header, json={
         'auditId': audit['auditId'], 'itemChunks': counts['monday'], 'closeChunks': counts['close'],
         'creatorAliases': inputs['creatorAliases'],
     }, timeout=60)

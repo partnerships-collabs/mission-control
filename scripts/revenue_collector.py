@@ -29,6 +29,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import requests
+from revenue_transport import request_with_retry
 
 try:
     from scripts.secret_loader import read_secret
@@ -316,7 +317,7 @@ def fetch_close_ytd(
 
     while True:
         params["_skip"] = skip
-        response = requests.get(
+        response = request_with_retry(requests.get,
             f"{CLOSE_BASE_URL}/opportunity/",
             auth=(close_api_key, ""),
             params=params,
@@ -382,7 +383,7 @@ def fetch_impact_ytd(account_sid: str, auth_token: str, now: datetime, *, requir
         f"https://api.impact.com/Mediapartners/{account_sid}"
         "/Reports/partner_performance_by_day"
     )
-    response = requests.get(
+    response = request_with_retry(requests.get,
         url,
         auth=(account_sid, auth_token),
         params={"START_DATE": start_date, "END_DATE": end_date, "PageSize": 1000},
@@ -431,7 +432,7 @@ def _redventures_windows(today: date, start_date: date | None = None) -> list[tu
 
 
 def fetch_redventures_token(client_id: str, client_secret: str) -> str:
-    token_response = requests.post(
+    token_response = request_with_retry(requests.post,
         "https://rvmedianetwork-prod.us.auth0.com/oauth/token",
         headers={"Content-Type": "application/json"},
         json={
@@ -465,7 +466,7 @@ def fetch_redventures_ytd(
     total = 0.0
     row_count = 0
     for start, end in _redventures_windows(now.date(), start_date):
-        response = requests.get(
+        response = request_with_retry(requests.get,
             "https://reporting-api.rvmedianetwork.com/overview",
             headers={"Authorization": f"Bearer {token}"},
             params={"propertyId": property_id, "start": start, "end": end},
@@ -511,40 +512,20 @@ def ads_campaign_earnings(campaign: object, allow_empty_history: bool = False) -
 def fetch_adsbymoney_ytd(api_token: str, now: datetime, *, start_date: date | None = None, require_rows: bool = True) -> float:
     year_start = start_date.isoformat() if start_date else f"{now.year}-01-01"
     today = now.strftime("%Y-%m-%d")
-    last_error: Exception | None = None
-    for attempt in range(3):
-        try:
-            response = requests.post(
-                "https://api.adsbymoney.com/api/v1/publisher_dashboard/campaigns",
-                json={"api_token": api_token, "start_at": year_start, "end_at": today},
-                headers={"Content-Type": "application/json"},
-                timeout=75,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            campaigns = payload.get("data") if isinstance(payload, dict) else None
-            if not isinstance(campaigns, list):
-                raise ConnectorError("malformed_response")
-            if not campaigns and require_rows:
-                raise ConnectorError("empty_data")
-            total = 0.0
-            for campaign in campaigns:
-                total += ads_campaign_earnings(campaign, allow_empty_history=not require_rows)
-            log.info(f"AdsByMoney: {len(campaigns)} campaigns -> ${total:,.2f}")
-            return total
-        except Exception as error:
-            last_error = error
-            if attempt < 2:
-                wait_seconds = 10 * (2**attempt)
-                log.warning(
-                    "AdsByMoney attempt %d failed: %s; retrying in %ds",
-                    attempt + 1,
-                    controlled_error_message(error),
-                    wait_seconds,
-                )
-                time.sleep(wait_seconds)
-    assert last_error is not None
-    raise last_error
+    response = request_with_retry(requests.post,
+        "https://api.adsbymoney.com/api/v1/publisher_dashboard/campaigns",
+        json={"api_token": api_token, "start_at": year_start, "end_at": today},
+        headers={"Content-Type": "application/json"}, timeout=75)
+    response.raise_for_status()
+    payload = response.json()
+    campaigns = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(campaigns, list):
+        raise ConnectorError("malformed_response")
+    if not campaigns and require_rows:
+        raise ConnectorError("empty_data")
+    total = sum(ads_campaign_earnings(c, allow_empty_history=not require_rows) for c in campaigns)
+    log.info(f"AdsByMoney: {len(campaigns)} campaigns -> ${total:,.2f}")
+    return total
 
 
 def fetch_msn_ytd(service_account_info: dict) -> float:

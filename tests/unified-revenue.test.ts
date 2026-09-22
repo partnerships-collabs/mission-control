@@ -85,10 +85,23 @@ test('receipt retries cannot downgrade an already committed successful run',asyn
   await assert.rejects(()=>receipt(dev.ctx,{...identity,startedAt:identity.startedAt+1,status:'processing'}),/Conflicting/);
 });
 
+test('manual collection cannot satisfy the scheduled noon reconciliation gate',async()=>{
+  const original=Date.now;Date.now=()=>Date.parse('2026-09-22T19:00:00Z');
+  try{
+    const dev=store(),manual=fixture();await dev.seed(manual);await record(dev.ctx,manual.args);
+    await receipt(dev.ctx,{collectorRunId:manual.args.collectorRunId,startedAt:Date.parse(manual.args.collectorStartedAt),status:'verified',origin:'manual'});
+    assert.ok((await unifiedReport(dev.ctx))!.issues.includes('scheduled_update_missing'));
+    const scheduled=fixture(1000);await dev.seed(scheduled);await record(dev.ctx,scheduled.args);
+    await receipt(dev.ctx,{collectorRunId:scheduled.args.collectorRunId,startedAt:Date.parse(scheduled.args.collectorStartedAt),status:'verified',origin:'scheduled'});
+    const report=await unifiedReport(dev.ctx);assert.ok(!report!.issues.includes('scheduled_update_missing'));
+    assert.equal(report!.scheduledCollection!.collectorRunId,scheduled.args.collectorRunId);
+  }finally{Date.now=original;}
+});
+
 test('abandoned upload becomes incomplete; an older rejected receipt cannot obscure a newer receipt',async()=>{
   const dev=store(),good=fixture();await dev.seed(good);await record(dev.ctx,good.args);
   await receipt(dev.ctx,{collectorRunId:crypto.randomUUID(),startedAt:Date.now(),status:'processing'});
-  dev.table('revenue_ingestion_receipts')[0].updatedAt=Date.now()-600_001;
+  dev.table('revenue_ingestion_receipts')[0].updatedAt=Date.now()-900_001;
   assert.ok((await unifiedReport(dev.ctx))!.issues.includes('collection_upload_incomplete'));
   await receipt(dev.ctx,{collectorRunId:crypto.randomUUID(),startedAt:Date.now()-100_000,status:'rejected',code:'internal_error'});
   assert.equal((await unifiedReport(dev.ctx))!.collection!.status,'processing');
