@@ -20,6 +20,10 @@ class FakeResponse:
         self.payload = payload
         self.text = text
         self.status_code = status_code
+        self.headers = {}
+
+    def close(self):
+        pass
 
     def json(self):
         return self.payload
@@ -32,6 +36,8 @@ class FakeResponse:
 requests_stub = types.ModuleType("requests")
 requests_stub.get = mock.Mock()
 requests_stub.post = mock.Mock()
+requests_stub.Timeout = type('Timeout', (Exception,), {})
+requests_stub.ConnectionError = type('ConnectionError', (Exception,), {})
 sys.modules["requests"] = requests_stub
 
 secret_loader_stub = types.ModuleType("secret_loader")

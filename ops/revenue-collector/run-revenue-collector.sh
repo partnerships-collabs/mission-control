@@ -16,7 +16,7 @@ STATE_DIR="${REVENUE_STATE_DIR:-$SERVICE_HOME/Library/Application Support/Creato
 TELEGRAM_CHAT_ID_FILE="${REVENUE_TELEGRAM_CHAT_ID_FILE:-$STATE_DIR/telegram-chat-id}"
 COLLECTOR_LOG="$LOG_DIR/collector.log"
 LOCK_FILE="$STATE_DIR/collector.lock"
-MAX_ATTEMPTS=3
+MAX_ATTEMPTS=1
 RETRY_DELAYS=(300 900)
 
 mkdir -p "$LOG_DIR" "$STATE_DIR"
@@ -101,6 +101,13 @@ if ! /usr/bin/lockf -s -t 0 9; then
 fi
 
 SECRET_LOADER_ROOT="$(cd "$(dirname "$SECRET_LOADER")/.." && pwd)"
+# Direct wrapper calls are manual. Only this existing launchd service in its
+# noon trigger window identifies a scheduled collection; no plist changes.
+REVENUE_RUN_ORIGIN=manual
+if [[ "${XPC_SERVICE_NAME:-}" == "co.creatorsagency.revenue-collector" && "$(TZ=America/Chicago date '+%H')" == "12" ]]; then
+  REVENUE_RUN_ORIGIN=scheduled
+fi
+export REVENUE_RUN_ORIGIN
 last_exit=1
 
 for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1)); do

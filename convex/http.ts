@@ -45,6 +45,20 @@ http.route({path:'/revenue/realtime/shadow',method:'GET',handler:httpAction(asyn
   return new Response(JSON.stringify(await ctx.runQuery(internal.realtimeRevenue.realtimeShadowReport,{})),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
 })});
 
+http.route({path:'/revenue/unified/collection-status',method:'POST',handler:httpAction(async(ctx,req)=>{
+  if(!checkActivityToken(req))return unauthorizedResponse();
+  const headers={'Content-Type':'application/json','Cache-Control':'no-store'};
+  try{
+    const body=await req.json(),identity=ingestionIdentity(body);
+    if(!identity||!['manual','scheduled'].includes(body.origin)||!['collecting','rejected'].includes(body.status)
+      ||(body.code!==undefined&&!['connector_failed','upload_failed','capture_failed','checkpoint_invalid'].includes(body.code)))
+      return new Response(JSON.stringify({code:'invalid_collection_status',retryable:false}),{status:422,headers});
+    await ctx.runMutation(internal.unifiedRevenue.recordIngestionReceipt,{...identity,origin:body.origin,status:body.status,
+      ...(body.code?{code:body.code,retryable:false}:{})});
+    return new Response(JSON.stringify({ok:true}),{headers});
+  }catch(error){const detail=ingestionError(error);return new Response(JSON.stringify(detail),{status:detail.status,headers});}
+})});
+
 http.route({path:'/revenue/unified/collection-run',method:'POST',handler:httpAction(async(ctx,req)=>{
   if (!checkActivityToken(req)) return unauthorizedResponse();
   const headers={'Content-Type':'application/json','Cache-Control':'no-store'};

@@ -3,17 +3,28 @@ import {summarizeMondayRows,type MondayRow} from './mondayRevenueMath';
 
 const split=(name:string)=>{const match=/\s+[xX]\s+/.exec(name);return match?[name.slice(0,match.index).trim(),name.slice(match.index+match[0].length).trim()]:[name.trim(),''];};
 const escape=(s:string)=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-const brandMatches=(brand:string,value:string)=>Boolean(brand&&(normalized(brand)===normalized(value)||new RegExp('^'+escape(brand)+'(?:\\b|\\s|\\()','i').test(value)));
 
 export function assertOverrideEvidenceStable(items:ReconciliationFact[],facts:CloseFact[],previous:CloseFact[]) {
+  // This runs inside the publication transaction (one-second CPU budget).
+  // Normalize/canonicalize each fact once, not for every reviewed exception.
+  const prepare=(rows:CloseFact[])=>rows.map(d=>({id:d.id,lead:d.lead_name,note:d.note,
+    normalLead:normalized(d.lead_name),normalNote:normalized(d.note),serialized:canonical(d)}))
+    .sort((a,b)=>a.id.localeCompare(b.id));
+  const current=prepare(facts),prior=prepare(previous);
+  const checked=new Set<string>();
   for(const item of items){
     const o=item.override;
     if(!o?.matches||!(o.disposition==='included'||o.source==='close'))continue;
     const brand=split(item.name)[0];
-    const related=(rows:CloseFact[])=>rows.filter(d=>brandMatches(brand,d.lead_name)||brandMatches(brand,d.note)||o.references.includes(d.id)).sort((a,b)=>a.id.localeCompare(b.id));
+    const references=new Set(o.references),key=JSON.stringify([brand,[...references].sort()]);
+    if(checked.has(key))continue;checked.add(key);
+    const normalBrand=normalized(brand),pattern=new RegExp('^'+escape(brand)+'(?:\\b|\\s|\\()','i');
+    const related=(rows:ReturnType<typeof prepare>)=>'['+rows.filter(d=>references.has(d.id)||Boolean(brand&&(
+      normalBrand===d.normalLead||normalBrand===d.normalNote||pattern.test(d.lead)||pattern.test(d.note))))
+      .map(d=>d.serialized).join(',')+']';
     // Existing reviewed exceptions remain valid only against the reviewed Close
     // evidence. Never let a later win silently bypass duplicate detection.
-    if(canonical(related(facts))!==canonical(related(previous)))throw Error('monday_override_requires_review');
+    if(related(current)!==related(prior))throw Error('monday_override_requires_review');
   }
 }
 

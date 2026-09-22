@@ -17,6 +17,7 @@ from pathlib import Path
 import revenue_collector as revenue
 import all_time_revenue_collector as history
 import monday_affiliates as monday
+import revenue_checkpoint as checkpoint
 
 SOURCES = (*revenue.SOURCE_NAMES, 'monday_affiliates')
 PLATFORMS = ('impact', 'redventures', 'adsbymoney')
@@ -43,10 +44,10 @@ def close_days(opportunities, now):
     return [{'date': day, 'amountCents': days[day]} for day in sorted(days)]
 
 
-def collect_payload(*, dry_run=False, now=None, mode='publish'):
-    started = revenue.utc_iso()
+def collect_payload(*, dry_run=False, now=None, mode='publish', secrets=None, run_id=None, started=None):
+    started = started or revenue.utc_iso()
     now = now or datetime.now(revenue.CHICAGO)
-    secrets = revenue.load_runtime_secrets(include_msn=False)
+    secrets = secrets or revenue.load_runtime_secrets(include_msn=False)
     health, series, days = {}, {}, []
     audit = None
     state_root = Path(os.environ.get('REVENUE_STATE_DIR', str(Path.home() / 'Library/Application Support/CreatorsAgency/revenue-collector')))
@@ -91,7 +92,7 @@ def collect_payload(*, dry_run=False, now=None, mode='publish'):
 
     successful = all(health[source].status == 'success' for source in SOURCES)
     payload = {
-        'collectorRunId': str(uuid.uuid4()), 'snapshotDate': now.date().isoformat(),
+        'collectorRunId': run_id or str(uuid.uuid4()), 'snapshotDate': now.date().isoformat(),
         'collectorStartedAt': started, 'collectorCompletedAt': revenue.utc_iso(),
         'goalUsd': revenue.GOAL_USD, 'mode': mode,
         'sourceHealth': {source: health[source].to_payload() for source in SOURCES},
@@ -112,41 +113,76 @@ def collect_payload(*, dry_run=False, now=None, mode='publish'):
 
 
 def main(dry_run=False, mode='publish'):
-    payload, audit, secrets, successful = collect_payload(dry_run=dry_run, mode=mode)
     if dry_run:
+        payload, audit, secrets, successful = collect_payload(dry_run=True, mode=mode)
         # Keep detailed canonical facts private; diagnostics print only sums.
         print(json.dumps({**{k: v for k, v in payload.items() if k not in ('closeDays', 'platformMonths')},
                           'dryRun': True, 'closeDays': len(payload['closeDays']),
                           'platformMonths': len(payload['platformMonths']),
                           'mondaySummary': audit['summary'] if audit else None}, indent=2))
         return 0 if successful else 1
+    secrets = revenue.load_runtime_secrets(include_msn=False)
     if not secrets.activity_secret:
         revenue.log.error('Unified ingestion credential unavailable')
         return 1
+    state = Path(os.environ.get('REVENUE_STATE_DIR', str(Path.home() / 'Library/Application Support/CreatorsAgency/revenue-collector')))
+    pending = state / ('pending-shadow-upload.json' if mode == 'shadow' else 'pending-upload.json')
+    origin = 'scheduled' if os.environ.get('REVENUE_RUN_ORIGIN') == 'scheduled' else 'manual'
+    payload = None
+    def status(kind, code=None):
+        if mode == 'shadow' or not payload:
+            return
+        body = {key: payload[key] for key in ('collectorRunId', 'collectorStartedAt')}
+        body.update(origin=origin, status=kind)
+        if code:
+            body['code'] = code
+        result = revenue.request_with_retry(revenue.requests.post, revenue.SITE_URL + '/revenue/unified/collection-status',
+            headers={'x-activity-secret': secrets.activity_secret}, json=body, timeout=30)
+        result.raise_for_status()
     try:
-        if audit is not None:
-            try:
-                monday.post_audit(audit, secrets.activity_secret)
-                if payload.get('evidenceId'):
-                    monday.post_reconciliation_evidence(audit, secrets.activity_secret)
-            except Exception as error:
-                # Audit persistence is required evidence. Report the failure so
-                # neither consumer appears freshly verified after a failed upload.
-                successful = False
-                for source in ('msn', 'monday_affiliates'):
-                    payload['sourceHealth'][source] = revenue.SourceHealth(None, 'failed', revenue.utc_iso(), False,
-                        revenue.controlled_error_message(error)).to_payload()
+        capture = checkpoint.load(pending)
+        if capture:
+            payload, audit, successful = capture['payload'], capture['audit'], capture['successful']
+            origin = capture['origin']
+            revenue.log.info('Resuming immutable upload for run %s', payload['collectorRunId'])
+        else:
+            payload = {'collectorRunId': str(uuid.uuid4()), 'collectorStartedAt': revenue.utc_iso()}
+            status('collecting')
+            payload, audit, _, successful = collect_payload(mode=mode, secrets=secrets,
+                run_id=payload['collectorRunId'], started=payload['collectorStartedAt'])
+            if not successful:
+                # Commit failed source health, without trying to validate or
+                # publish an incomplete reconciliation capture.
+                audit = None
                 payload.pop('mondayAuditId', None)
                 payload.pop('evidenceId', None)
-                payload.update(closeDays=[], platformMonths=[], collectorCompletedAt=revenue.utc_iso())
-        response = revenue.requests.post(revenue.SITE_URL + '/revenue/unified/collection-run',
+            checkpoint.save(pending, {'payload': payload, 'audit': audit, 'successful': successful, 'origin': origin})
+        if audit is not None:
+            monday.post_audit(audit, secrets.activity_secret)
+            if payload.get('evidenceId'):
+                monday.post_reconciliation_evidence(audit, secrets.activity_secret)
+        response = revenue.request_with_retry(revenue.requests.post, revenue.SITE_URL + '/revenue/unified/collection-run',
                     headers={'x-activity-secret': secrets.activity_secret}, json=payload, timeout=60)
         response.raise_for_status()
         result = response.json()
         print(json.dumps(result, sort_keys=True))
+        # A terminal server response means these private transport inputs no
+        # longer need retrying; authoritative evidence remains stored in Convex.
+        pending.unlink(missing_ok=True)
         return 0 if successful and result.get('verified') and (mode == 'shadow' or result.get('published') or result.get('queued')) else 1
     except Exception as error:
         revenue.log.error('Unified ingestion failed: %s', revenue.controlled_error_message(error))
+        try:
+            status('rejected', 'upload_failed')
+        except Exception:
+            revenue.log.error('Collection failure status could not be reported; existing wrapper alert required')
+        response = getattr(error, 'response', None)
+        if response is not None:
+            try:
+                if response.status_code in (400, 401, 403, 409, 422) or response.json().get('retryable') is False:
+                    return 78
+            except (ValueError, AttributeError):
+                pass
         return 1
 
 
