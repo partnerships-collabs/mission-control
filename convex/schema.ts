@@ -24,6 +24,10 @@ const revenueSourceHealth = v.object({
 
 export default defineSchema(
   {
+    revenue_ingestion_receipts: defineTable({collectorRunId:v.string(),startedAt:v.number(),receivedAt:v.number(),
+      updatedAt:v.number(),status:v.union(v.literal('processing'),v.literal('verified'),v.literal('rejected')),
+      code:v.optional(v.string()),retryable:v.optional(v.boolean())})
+      .index('by_run',['collectorRunId']).index('by_started',['startedAt']),
     revenue_close_captures:defineTable({runId:v.string(),index:v.number(),facts:v.array(closeFact)}).index('by_run_index',['runId','index']),
     revenue_reconciliation_chunks:defineTable({auditId:v.string(),kind:v.union(v.literal('monday'),v.literal('close')),index:v.number(),
       items:v.array(reconciliationFact),close:v.array(closeFact)}).index('by_audit_kind_index',['auditId','kind','index']),

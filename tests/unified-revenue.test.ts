@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { deriveUnifiedSnapshot, evaluateUnifiedAttempt, UNIFIED_SOURCES } from '../convex/unifiedRevenueMath';
-import { recordUnifiedRunInternal, unifiedReport, unifiedHealthReport } from '../convex/unifiedRevenue';
+import { recordUnifiedRunInternal, recordIngestionReceipt, unifiedReport, unifiedHealthReport } from '../convex/unifiedRevenue';
 import { allTimeRevenueInternal, latestSnapshotInternal, revenueHealthInternal, recordCollectionRunInternal, recordAllTimeRunInternal } from '../convex/revenue';
 import { summarizeMondayRows } from '../convex/mondayRevenueMath';
 
@@ -38,7 +38,7 @@ function store() {
       const filters:Array<[string,unknown]>=[];let fields:string[]=[];let descending=false;
       const query={
         withIndex(index:string,filter?:(q:any)=>void) {
-          fields=index==='by_audit_chunk'?['auditId','index']:index==='by_received_at'?['receivedAt']:[];
+          fields=index==='by_audit_chunk'?['auditId','index']:index==='by_received_at'?['receivedAt']:index==='by_started'?['startedAt']:[];
           const q={eq(k:string,v:unknown){filters.push([k,v]);return q;}};filter?.(q);return query;
         },
         order(order:string){descending=order==='desc';return query;},
@@ -62,6 +62,37 @@ function store() {
   return {ctx,table,seed};
 }
 const record=(recordUnifiedRunInternal as any)._handler;
+const receipt=(recordIngestionReceipt as any)._handler;
+
+test('rejected ingestion is durable and immediately unhealthy without replacing the verified number',async()=>{
+  const dev=store(),good=fixture();await dev.seed(good);await record(dev.ctx,good.args);
+  const failed={collectorRunId:crypto.randomUUID(),startedAt:Date.parse(good.args.collectorStartedAt)+100};
+  await receipt(dev.ctx,{...failed,status:'processing'});
+  await receipt(dev.ctx,{...failed,status:'rejected',code:'execution_limit',retryable:false});
+  const report=await unifiedReport(dev.ctx);
+  assert.equal(report!.snapshot.datasetId,good.args.collectorRunId);
+  assert.equal(report!.healthy,false);assert.ok(report!.issues.includes('collection_upload_failed'));
+  assert.equal(report!.collection!.code,'execution_limit');
+  const next=fixture(1000);await dev.seed(next);await record(dev.ctx,next.args);
+  assert.ok(!(await unifiedReport(dev.ctx))!.issues.includes('collection_upload_failed'));
+});
+
+test('receipt retries cannot downgrade an already committed successful run',async()=>{
+  const dev=store(),good=fixture();await dev.seed(good);await record(dev.ctx,good.args);
+  const identity={collectorRunId:good.args.collectorRunId,startedAt:Date.parse(good.args.collectorStartedAt)};
+  await receipt(dev.ctx,{...identity,status:'rejected',code:'internal_error',retryable:false});
+  assert.equal((await unifiedReport(dev.ctx))!.collection!.status,'verified');
+  await assert.rejects(()=>receipt(dev.ctx,{...identity,startedAt:identity.startedAt+1,status:'processing'}),/Conflicting/);
+});
+
+test('abandoned upload becomes incomplete; an older rejected receipt cannot obscure a newer receipt',async()=>{
+  const dev=store(),good=fixture();await dev.seed(good);await record(dev.ctx,good.args);
+  await receipt(dev.ctx,{collectorRunId:crypto.randomUUID(),startedAt:Date.now(),status:'processing'});
+  dev.table('revenue_ingestion_receipts')[0].updatedAt=Date.now()-600_001;
+  assert.ok((await unifiedReport(dev.ctx))!.issues.includes('collection_upload_incomplete'));
+  await receipt(dev.ctx,{collectorRunId:crypto.randomUUID(),startedAt:Date.now()-100_000,status:'rejected',code:'internal_error'});
+  assert.equal((await unifiedReport(dev.ctx))!.collection!.status,'processing');
+});
 
 test('one canonical dataset: exact monthly/year/lifetime cents, MSN split, and Close 30 days',()=>{
   const f=fixture();const result=deriveUnifiedSnapshot(f.args,f.rows);

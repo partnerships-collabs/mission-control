@@ -31,6 +31,7 @@ import type * as realtimeRevenueModel from "../realtimeRevenueModel.js";
 import type * as reconcileMonday from "../reconcileMonday.js";
 import type * as revenue from "../revenue.js";
 import type * as revenueEvidence from "../revenueEvidence.js";
+import type * as revenueIngestionErrors from "../revenueIngestionErrors.js";
 import type * as revenueMath from "../revenueMath.js";
 import type * as search from "../search.js";
 import type * as unifiedRevenue from "../unifiedRevenue.js";
@@ -67,6 +68,7 @@ declare const fullApi: ApiFromModules<{
   reconcileMonday: typeof reconcileMonday;
   revenue: typeof revenue;
   revenueEvidence: typeof revenueEvidence;
+  revenueIngestionErrors: typeof revenueIngestionErrors;
   revenueMath: typeof revenueMath;
   search: typeof search;
   unifiedRevenue: typeof unifiedRevenue;
