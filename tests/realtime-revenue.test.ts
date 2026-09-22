@@ -23,6 +23,7 @@ function store(){
     query(name:string){const filters:Array<(r:any)=>boolean>=[];const q:any={
       withIndex(_index:string,apply?:(q:any)=>void){const range:any={eq(k:string,v:any){filters.push(r=>r[k]===v);return range;},lt(k:string,v:any){filters.push(r=>r[k]<v);return range;}};apply?.(range);return q;},
       async collect(){return table(name).filter(r=>filters.every(f=>f(r)));},
+      order(){return q;},async first(){return (await q.collect())[0]??null;},
       async unique(){const rows=await q.collect();assert.ok(rows.length<=1);return rows[0]??null;},
       async take(n:number){return (await q.collect()).slice(0,n);}};return q;},
     async insert(name:string,row:any){const id=name+':'+(++serial);table(name).push({...structuredClone(row),_id:id});return id;},

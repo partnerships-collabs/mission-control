@@ -1,4 +1,5 @@
 import { internalMutation } from './_generated/server';
+import {v} from 'convex/values';
 import type { QueryCtx, MutationCtx } from './_generated/server';
 import { unifiedRunFields } from './unifiedRevenueModel';
 import { evaluateUnifiedAttempt, UNIFIED_SOURCES } from './unifiedRevenueMath';
@@ -9,6 +10,20 @@ import {realtimeState,scheduleRefresh} from './realtimeRevenue';
 import {chicagoDate} from './realtimeRevenueModel';
 
 type ReadCtx = Pick<QueryCtx,'db'> | Pick<MutationCtx,'db'>;
+// Separate transactions from publication: a rejected/rolled-back mutation must
+// never erase evidence that an authenticated upload was attempted.
+export const recordIngestionReceipt = internalMutation({args:{collectorRunId:v.string(),startedAt:v.number(),
+  status:v.union(v.literal('processing'),v.literal('verified'),v.literal('rejected')),
+  code:v.optional(v.string()),retryable:v.optional(v.boolean())},handler:async(ctx,args)=>{
+  const prior=await ctx.db.query('revenue_ingestion_receipts').withIndex('by_run',q=>q.eq('collectorRunId',args.collectorRunId)).unique();
+  if(prior&&prior.startedAt!==args.startedAt)throw Error('Conflicting run ID');
+  // An erroneous duplicate cannot turn a committed verified run into a failure.
+  const run=await ctx.db.query('revenue_unified_runs').withIndex('by_run',q=>q.eq('collectorRunId',args.collectorRunId)).unique();
+  const status=run?.verified?'verified':args.status;
+  const fields={...args,status,code:status==='verified'?undefined:args.code,retryable:status==='verified'?undefined:args.retryable,updatedAt:Date.now()};
+  if(prior)await ctx.db.patch(prior._id,fields);
+  else await ctx.db.insert('revenue_ingestion_receipts',{...fields,receivedAt:Date.now()});
+}});
 export const activePublication = (ctx:ReadCtx) => ctx.db.query('revenue_publication').withIndex('by_key',q=>q.eq('key','active')).unique();
 function canonical(value:unknown):string {
   if (Array.isArray(value)) return '['+value.map(canonical).join(',')+']';
@@ -87,6 +102,15 @@ export async function unifiedReport(ctx:ReadCtx) {
   const audit=await ctx.db.query('revenue_monday_audits').withIndex('by_audit',q=>q.eq('auditId',run.mondayAuditId!)).unique();
   if (!audit) throw new Error('Unified audit unavailable');
   const now=Date.now();
+  const receipt=await ctx.db.query('revenue_ingestion_receipts').withIndex('by_started').order('desc').first();
+  const receiptRun=receipt?await ctx.db.query('revenue_unified_runs').withIndex('by_run',q=>q.eq('collectorRunId',receipt.collectorRunId)).unique():null;
+  const collection=receipt?{collectorRunId:receipt.collectorRunId,startedAt:receipt.startedAt,receivedAt:receipt.receivedAt,updatedAt:receipt.updatedAt,
+    status:receiptRun?.verified?'verified':receipt.status,code:receiptRun?.verified?null:receipt.code??null,
+    retryable:receiptRun?.verified?false:receipt.retryable??false}:null;
+  const latestReceiptRelevant=receipt&&receipt.startedAt>=Date.parse(attempt.collectorStartedAt);
+  const ingestionIssues=latestReceiptRelevant&&!receiptRun?.verified
+    ? receipt.status==='rejected'?['collection_upload_failed']
+      :receipt.status==='processing'&&now-receipt.updatedAt>600_000?['collection_upload_incomplete']:[] :[];
   const realtime=await realtimeState(ctx);
   const dailyAttempt=realtime?.dailyAttemptId?await ctx.db.get(realtime.dailyAttemptId):null;
   const schedule=revenueScheduleHealth(run.provenance?chicagoDate(Date.parse(run.provenance.lastFullRefreshAt)):run.snapshotDate,new Date(now));
@@ -96,7 +120,7 @@ export async function unifiedReport(ctx:ReadCtx) {
   const fresh=UNIFIED_SOURCES.every(key=>sourceHealth[key].freshness==='fresh');
   const live=Boolean(run.provenance);
   const closeError=live&&realtime?.mode!=='off'?realtime?.error:undefined;
-  const issues=[...attempt.issues,...(live&&dailyAttempt&&!dailyAttempt.verified?dailyAttempt.issues:[]),
+  const issues=[...attempt.issues,...ingestionIssues,...(live&&dailyAttempt&&!dailyAttempt.verified?dailyAttempt.issues:[]),
     ...(closeError?['close_refresh_failed']:[]),...(!schedule.lastAttemptOnSchedule?['scheduled_update_missing']:[]),...(!fresh?['sources_stale']:[])];
   const snapshot={...run.snapshot, datasetId:run.collectorRunId, msnSource:'monday_paid' as const,
     snapshotDate:run.snapshotDate,collectorStartedAt:run.collectorStartedAt,collectorCompletedAt:run.collectorCompletedAt,
@@ -104,7 +128,7 @@ export async function unifiedReport(ctx:ReadCtx) {
     ...(run.provenance?{refresh:{...run.provenance,closePending:Boolean(realtime&&realtime.requested>realtime.processed),
       closeError:closeError??null,mode:realtime?.mode??'off',allSourcesCurrent:issues.length===0}}:{}),
     monday:{auditId:audit.auditId,fetchedAt:audit.fetchedAt,ruleVersion:audit.ruleVersion,summary:audit.summary}};
-  return {healthy:attempt.published && issues.length===0,issues,schedule,snapshot,
+  return {healthy:attempt.published && issues.length===0,issues,schedule,snapshot,collection,
     lastAttempt:{collectorRunId:attempt.collectorRunId,snapshotDate:attempt.snapshotDate,
       collectorStartedAt:attempt.collectorStartedAt,collectorCompletedAt:attempt.collectorCompletedAt,
       published:attempt.published,verificationStatus:attempt.verified?'verified':'degraded',
@@ -128,7 +152,7 @@ export async function unifiedHealthReport(ctx:ReadCtx) {
   if (!report) return null;
   const s=report.snapshot;
   const queue=await realtimeState(ctx);
-  return {healthy:report.healthy,issues:report.issues,schedule:report.schedule,datasetId:s.datasetId,
+  return {healthy:report.healthy,issues:report.issues,schedule:report.schedule,collection:report.collection,datasetId:s.datasetId,
     ...(s.refresh?{refresh:s.refresh}:{}),
     queue:queue?{mode:queue.mode,pending:queue.requested>queue.processed,requestedVersion:queue.requested,processedVersion:queue.processed,
       failures:queue.failures,error:queue.error??null,lastEventAt:queue.lastEventAt??null,lastSuccessAt:queue.lastSuccessAt??null,

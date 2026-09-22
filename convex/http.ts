@@ -1,4 +1,5 @@
 import { httpRouter } from "convex/server";
+import {ingestionError,ingestionIdentity} from './revenueIngestionErrors';
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
@@ -46,11 +47,25 @@ http.route({path:'/revenue/realtime/shadow',method:'GET',handler:httpAction(asyn
 
 http.route({path:'/revenue/unified/collection-run',method:'POST',handler:httpAction(async(ctx,req)=>{
   if (!checkActivityToken(req)) return unauthorizedResponse();
+  const headers={'Content-Type':'application/json','Cache-Control':'no-store'};
+  let identity:ReturnType<typeof ingestionIdentity>=null;
+  let trackReceipt=false;
   try {
-    const result=await ctx.runMutation(internal.revenue.recordUnifiedRunInternal,await req.json());
-    return new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
-  } catch {
-    return new Response(JSON.stringify({error:'Unified revenue attempt rejected'}),{status:400,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+    const body=await req.json();identity=ingestionIdentity(body);
+    if(!identity)return new Response(JSON.stringify({error:'Invalid collection identity',code:'invalid_collection_identity',retryable:false}),{status:422,headers});
+    trackReceipt=body.mode==='publish';
+    if(trackReceipt)await ctx.runMutation(internal.unifiedRevenue.recordIngestionReceipt,{...identity,status:'processing'});
+    const result=await ctx.runMutation(internal.revenue.recordUnifiedRunInternal,body);
+    if(trackReceipt)await ctx.runMutation(internal.unifiedRevenue.recordIngestionReceipt,{...identity,status:result.verified?'verified':'rejected',
+      ...(!result.verified?{code:'verification_failed',retryable:false}:{})});
+    return new Response(JSON.stringify(result),{headers});
+  } catch(error) {
+    const detail=error instanceof SyntaxError?{code:'invalid_json',status:400,retryable:false}:ingestionError(error);
+    console.error(JSON.stringify({stage:'unified_publication',runId:identity?.collectorRunId??null,code:detail.code,retryable:detail.retryable}));
+    if(identity&&trackReceipt)try{await ctx.runMutation(internal.unifiedRevenue.recordIngestionReceipt,{...identity,status:'rejected',code:detail.code,retryable:detail.retryable});}
+      catch{console.error('Revenue ingestion failure receipt could not be persisted');}
+    return new Response(JSON.stringify({error:'Unified revenue attempt rejected',code:detail.code,retryable:detail.retryable,
+      collectorRunId:identity?.collectorRunId??null}),{status:detail.status,headers});
   }
 })});
 
