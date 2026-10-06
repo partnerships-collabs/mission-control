@@ -49,6 +49,7 @@ async function main(){
   assert.equal((await (await send(signature)).json()).duplicate,true);
   assert.equal((await fetch('http://127.0.0.1:3282/revenue/realtime/status')).status,401);
   // Fresh local run identity makes staging repeatable without changing capture.
+  payload.mode='publish';
   payload.collectorRunId=crypto.randomUUID();payload.mondayAuditId=crypto.randomUUID();payload.evidenceId=payload.mondayAuditId;
   audit.auditId=payload.mondayAuditId;
   const now=new Date().toISOString();payload.collectorStartedAt=now;payload.collectorCompletedAt=now;audit.fetchedAt=now;

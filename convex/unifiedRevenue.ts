@@ -67,10 +67,11 @@ export const recordUnifiedRunInternal = internalMutation({
         if(canonical(rows)!==canonical(chunks.flatMap(c=>c.rows))||canonical(deriveCloseDays(evidence.close,args.snapshotDate))!==canonical(args.closeDays))throw Error('reconciliation_parity_failed');
       }catch{result.issues.push('reconciliation_evidence_invalid');}
     }
-    if (!audit || audit.snapshotDate!==args.snapshotDate || !audit.ruleVersion.startsWith('2026-09-18.msn-paid:')
-        || audit.fetchedAt!==sourceHealth.msn.fetchedAt || audit.fetchedAt!==sourceHealth.monday_affiliates.fetchedAt) result.issues.push('monday_audit_mismatch');
+    const completeCapture=UNIFIED_SOURCES.every(k=>sourceHealth[k].status==='success');
+    if ((audit || completeCapture) && (!audit || audit.snapshotDate!==args.snapshotDate || !audit.ruleVersion.startsWith('2026-09-18.msn-paid:')
+        || audit.fetchedAt!==sourceHealth.msn.fetchedAt || audit.fetchedAt!==sourceHealth.monday_affiliates.fetchedAt)) result.issues.push('monday_audit_mismatch');
     const publication=await activePublication(ctx);
-    if(realtime?.mode==='live'&&!args.evidenceId&&args.mode==='publish')result.issues.push('reconciliation_evidence_required');
+    if(completeCapture&&realtime?.mode==='live'&&!args.evidenceId&&args.mode==='publish')result.issues.push('reconciliation_evidence_required');
     const lastAttempt=publication?await ctx.db.get(publication.latestAttemptId):null;
     // A delayed old run may never replace a newer failure or verified dataset.
     const clockValid=!result.issues.some(issue=>['invalid_collection_time','invalid_snapshot_date','invalid_utc_timestamp'].includes(issue));
@@ -116,8 +117,8 @@ export async function unifiedReport(ctx:ReadCtx) {
   const dailyOrdering=run.provenance?dailyAttempt:attempt;
   const latestReceiptRelevant=receipt&&(!dailyOrdering||receipt.startedAt>=Date.parse(dailyOrdering.collectorStartedAt));
   const ingestionIssues=latestReceiptRelevant&&!receiptRun?.verified
-    ? receipt.status==='rejected'?['collection_upload_failed']
-      :(receipt.status==='processing'||receipt.status==='collecting')&&now-receipt.updatedAt>900_000?['collection_upload_incomplete']:[] :[];
+    ? receipt.status==='rejected'?[receipt.code==='connector_failed'?'collection_connector_failed':receipt.code==='verification_failed'?'collection_validation_failed':['capture_failed','checkpoint_invalid'].includes(receipt.code??'')?'collection_capture_failed':'collection_upload_failed']
+      :(receipt.status==='processing'||receipt.status==='collecting')&&now-receipt.updatedAt>(receipt.status==='collecting'?1_200_000:900_000)?['collection_upload_incomplete']:[] :[];
   const schedule=revenueScheduleHealth(run.provenance?chicagoDate(Date.parse(run.provenance.lastFullRefreshAt)):run.snapshotDate,new Date(now));
   const scheduled=await ctx.db.query('revenue_ingestion_receipts').withIndex('by_origin_started',q=>q.eq('origin','scheduled')).order('desc').first();
   const scheduledRun=scheduled?await ctx.db.query('revenue_unified_runs').withIndex('by_run',q=>q.eq('collectorRunId',scheduled.collectorRunId)).unique():null;
