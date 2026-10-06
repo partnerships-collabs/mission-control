@@ -64,6 +64,23 @@ function store() {
 const record=(recordUnifiedRunInternal as any)._handler;
 const receipt=(recordIngestionReceipt as any)._handler;
 
+test('upstream failure with deliberately omitted audit is not a Monday mismatch or transport failure',async()=>{
+  const dev=store(),good=fixture();await dev.seed(good);await record(dev.ctx,good.args);
+  const failed=fixture(1000).args;delete (failed as any).mondayAuditId;
+  failed.sourceHealth.adsbymoney={status:'failed',fetchedAt:failed.collectorCompletedAt,reused:false,error:'HTTP request failed (status=504)'};
+  failed.closeDays=[];failed.platformMonths=[];
+  const result=await record(dev.ctx,failed);
+  assert.equal(result.published,false);assert.ok(result.issues.includes('adsbymoney_failed'));
+  assert.ok(!result.issues.includes('monday_audit_mismatch'));
+  await receipt(dev.ctx,{collectorRunId:failed.collectorRunId,startedAt:Date.parse(failed.collectorStartedAt),status:'rejected',code:'connector_failed'});
+  const report=await unifiedReport(dev.ctx);
+  assert.equal(report!.snapshot.datasetId,good.args.collectorRunId);
+  assert.ok(report!.issues.includes('collection_connector_failed'));
+  assert.ok(!report!.issues.includes('collection_upload_failed'));
+  const missing=fixture(2000).args;delete (missing as any).mondayAuditId;
+  assert.ok((await record(dev.ctx,missing)).issues.includes('monday_audit_mismatch'));
+});
+
 test('rejected ingestion is durable and immediately unhealthy without replacing the verified number',async()=>{
   const dev=store(),good=fixture();await dev.seed(good);await record(dev.ctx,good.args);
   const failed={collectorRunId:crypto.randomUUID(),startedAt:Date.parse(good.args.collectorStartedAt)+100};

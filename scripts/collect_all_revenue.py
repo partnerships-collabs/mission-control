@@ -18,6 +18,8 @@ import revenue_collector as revenue
 import all_time_revenue_collector as history
 import monday_affiliates as monday
 import revenue_checkpoint as checkpoint
+import revenue_transport as transport
+from revenue_progress import Progress
 
 SOURCES = (*revenue.SOURCE_NAMES, 'monday_affiliates')
 PLATFORMS = ('impact', 'redventures', 'adsbymoney')
@@ -44,7 +46,7 @@ def close_days(opportunities, now):
     return [{'date': day, 'amountCents': days[day]} for day in sorted(days)]
 
 
-def collect_payload(*, dry_run=False, now=None, mode='publish', secrets=None, run_id=None, started=None):
+def collect_payload(*, dry_run=False, now=None, mode='publish', secrets=None, run_id=None, started=None, progress=None):
     started = started or revenue.utc_iso()
     now = now or datetime.now(revenue.CHICAGO)
     secrets = secrets or revenue.load_runtime_secrets(include_msn=False)
@@ -54,24 +56,35 @@ def collect_payload(*, dry_run=False, now=None, mode='publish', secrets=None, ru
 
     def platform(source):
         def fetch():
-            series[source] = history.fetch_monthly_history(secrets, now, source)
+            series[source] = history.fetch_monthly_history(secrets, now, source, **({'progress':progress} if progress else {}))
             return sum(monday.cents(Decimal(str(v))) for v in series[source].values()) / 100
-        return revenue.collect_source(source, fetch, secrets.source_errors.get(source))
+        health = revenue.collect_source(source, fetch, secrets.source_errors.get(source))
+        if progress and health.status == 'success':
+            # Original earliest constituent capture, never a cache read time.
+            with progress.lock:
+                stamps = [v['fetchedAt'] for k,v in progress.value['entries'].items() if k.startswith('month:'+source+':')]
+            if stamps:
+                health = revenue.SourceHealth(health.amount_usd, 'success', min(stamps), False)
+        return health
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {source: pool.submit(platform, source) for source in PLATFORMS}
         opportunities = []
         def fetch_close():
             nonlocal opportunities, days
-            opportunities = monday.fetch_close_evidence(secrets.close_api_key, now)
+            fetch = lambda: monday.fetch_close_evidence(secrets.close_api_key, now)
+            opportunities = progress.memo('close', fetch, revenue.utc_iso)[0] if progress else fetch()
             days = close_days(opportunities, now)
             return sum(row['amountCents'] for row in days) / 100
         health['close'] = revenue.collect_source('close', fetch_close, secrets.source_errors.get('close'))
+        if progress and health['close'].status == 'success':
+            health['close'] = revenue.SourceHealth(health['close'].amount_usd, 'success', progress.get('close')['fetchedAt'], False)
         try:
             if health['close'].status != 'success' or secrets.source_errors.get('impact'):
                 raise revenue.ConnectorError('validation')
-            audit = monday.collect(now, state_root / 'monday-item-ids.json', secrets=secrets,
+            fetch_audit = lambda: monday.collect(now, state_root / 'monday-item-ids.json', secrets=secrets,
                                    opportunities=opportunities, msn_from_monday=True, read_only=dry_run)
+            audit = progress.memo('monday', fetch_audit, revenue.utc_iso)[0] if progress else fetch_audit()
             if any(row.get('source') == 'msn' and row['disposition'] == 'review' for row in audit['rows']):
                 raise revenue.ConnectorError('validation')
             for source in ('msn', 'monday_affiliates'):
@@ -127,8 +140,10 @@ def main(dry_run=False, mode='publish'):
         return 1
     state = Path(os.environ.get('REVENUE_STATE_DIR', str(Path.home() / 'Library/Application Support/CreatorsAgency/revenue-collector')))
     pending = state / ('pending-shadow-upload.json' if mode == 'shadow' else 'pending-upload.json')
+    partial = state / ('partial-shadow-capture.json' if mode == 'shadow' else 'partial-capture.json')
     origin = 'scheduled' if os.environ.get('REVENUE_RUN_ORIGIN') == 'scheduled' else 'manual'
     payload = None
+    phase = 'checkpoint'
     def status(kind, code=None):
         if mode == 'shadow' or not payload:
             return
@@ -146,10 +161,17 @@ def main(dry_run=False, mode='publish'):
             origin = capture['origin']
             revenue.log.info('Resuming immutable upload for run %s', payload['collectorRunId'])
         else:
-            payload = {'collectorRunId': str(uuid.uuid4()), 'collectorStartedAt': revenue.utc_iso()}
+            progress = Progress.resume(partial, origin, mode)
+            if progress is None:
+                progress = Progress(partial, str(uuid.uuid4()), revenue.utc_iso(), datetime.now(revenue.CHICAGO).isoformat(), origin, mode)
+            payload = {k:progress.value['payload'][k] for k in ('collectorRunId','collectorStartedAt')}
             status('collecting')
+            phase = 'capture'
+            progress.start_budget()
             payload, audit, _, successful = collect_payload(mode=mode, secrets=secrets,
-                run_id=payload['collectorRunId'], started=payload['collectorStartedAt'])
+                run_id=payload['collectorRunId'], started=payload['collectorStartedAt'],
+                now=datetime.fromisoformat(progress.value['cutoff']), progress=progress)
+            transport.collection_deadline = None  # Publication has its own bounded retries.
             if not successful:
                 # Commit failed source health, without trying to validate or
                 # publish an incomplete reconciliation capture.
@@ -157,6 +179,8 @@ def main(dry_run=False, mode='publish'):
                 payload.pop('mondayAuditId', None)
                 payload.pop('evidenceId', None)
             checkpoint.save(pending, {'payload': payload, 'audit': audit, 'successful': successful, 'origin': origin})
+            partial.unlink(missing_ok=True)  # Terminal capture; immutable upload now owns the identity.
+        phase = 'upload'
         if audit is not None:
             monday.post_audit(audit, secrets.activity_secret)
             if payload.get('evidenceId'):
@@ -171,9 +195,10 @@ def main(dry_run=False, mode='publish'):
         pending.unlink(missing_ok=True)
         return 0 if successful and result.get('verified') and (mode == 'shadow' or result.get('published') or result.get('queued')) else 1
     except Exception as error:
+        transport.collection_deadline = None
         revenue.log.error('Unified ingestion failed: %s', revenue.controlled_error_message(error))
         try:
-            status('rejected', 'upload_failed')
+            status('rejected', {'checkpoint':'checkpoint_invalid','capture':'capture_failed','upload':'upload_failed'}[phase])
         except Exception:
             revenue.log.error('Collection failure status could not be reported; existing wrapper alert required')
         response = getattr(error, 'response', None)

@@ -108,19 +108,29 @@ def fetch_ads_all_time(secrets, now: datetime) -> float:
     return round(total, 2)
 
 
-def fetch_monthly_history(secrets, now, source):
+def fetch_monthly_history(secrets, now, source, progress=None):
+    if source == 'adsbymoney':
+        from revenue_ads_history import fetch_history
+        return fetch_history(secrets.adsbymoney_api_key, list(calendar_months(HISTORY_START_YEAR, now)), progress)
     # One short-lived token for this capture, never persisted. Requesting a
     # token for every historical month unnecessarily amplifies auth traffic.
     rv_token = revenue.fetch_redventures_token(secrets.redventures_client_id, secrets.redventures_client_secret) if source == 'redventures' else None
     def month_total(bounds):
         start, end = bounds
+        key = 'month:' + source + ':' + str(start) + ':' + str(end.date())
+        saved = progress.get(key) if progress else None
+        if saved is not None:
+            return start.strftime('%Y-%m'), saved['value']
         if source == 'impact':
             amount = revenue.fetch_impact_ytd(secrets.impact_sid, secrets.impact_reporting_password, end, start_date=start, require_rows=False)
         elif source == 'redventures':
             amount = revenue.fetch_redventures_ytd(secrets.redventures_client_id, secrets.redventures_client_secret, revenue.REDVENTURES_PROPERTY_ID, end, start_date=start, require_rows=False, access_token=rv_token)
         else:
             amount = revenue.fetch_adsbymoney_ytd(secrets.adsbymoney_api_key, end, start_date=start, require_rows=False)
-        return start.strftime('%Y-%m'), round(amount, 2)
+        amount = round(amount, 2)
+        if progress:
+            progress.put(key, amount, revenue.utc_iso())
+        return start.strftime('%Y-%m'), amount
     with ThreadPoolExecutor(max_workers=3) as pool:
         values = dict(pool.map(month_total, calendar_months(HISTORY_START_YEAR, now)))
     if sum(values.values()) <= 0:

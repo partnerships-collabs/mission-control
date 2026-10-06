@@ -71,7 +71,7 @@ http.route({path:'/revenue/unified/collection-run',method:'POST',handler:httpAct
     if(trackReceipt)await ctx.runMutation(internal.unifiedRevenue.recordIngestionReceipt,{...identity,status:'processing'});
     const result=await ctx.runMutation(internal.revenue.recordUnifiedRunInternal,body);
     if(trackReceipt)await ctx.runMutation(internal.unifiedRevenue.recordIngestionReceipt,{...identity,status:result.verified?'verified':'rejected',
-      ...(!result.verified?{code:'verification_failed',retryable:false}:{})});
+      ...(!result.verified?{code:result.issues.some((issue:string)=>/^(close|impact|redventures|adsbymoney|msn|monday_affiliates)_failed$/.test(issue))?'connector_failed':'verification_failed',retryable:false}:{})});
     return new Response(JSON.stringify(result),{headers});
   } catch(error) {
     const detail=error instanceof SyntaxError?{code:'invalid_json',status:400,retryable:false}:ingestionError(error);

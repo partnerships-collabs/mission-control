@@ -514,6 +514,7 @@ def fetch_adsbymoney_ytd(api_token: str, now: datetime, *, start_date: date | No
     today = now.strftime("%Y-%m-%d")
     response = request_with_retry(requests.post,
         "https://api.adsbymoney.com/api/v1/publisher_dashboard/campaigns",
+        diagnostic=('adsbymoney', year_start, today),
         json={"api_token": api_token, "start_at": year_start, "end_at": today},
         headers={"Content-Type": "application/json"}, timeout=75)
     response.raise_for_status()
