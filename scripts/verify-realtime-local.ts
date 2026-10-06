@@ -11,9 +11,10 @@ import {deriveUnifiedSnapshot} from '../convex/unifiedRevenueMath';
 
 async function main(){
   const config=JSON.parse(readFileSync('.convex/local/default/config.json','utf8'));
-  assert.equal(config.ports.cloud,3281);
+  assert.ok([3281,3283].includes(config.ports.cloud));
+  const siteUrl=`http://127.0.0.1:${config.ports.cloud+1}`;
   // The admin-only SDK methods intentionally accept internal function refs.
-  const client:any=new ConvexHttpClient('http://127.0.0.1:3281');
+  const client:any=new ConvexHttpClient(`http://127.0.0.1:${config.ports.cloud}`);
   (client as any).setAdminAuth(config.adminKey);
   const file='.convex/realtime-private-capture.json';
   if(process.argv.includes('--mini-capture')){
@@ -43,11 +44,14 @@ async function main(){
   const body=JSON.stringify({subscription_id:'whsub_staging',event:{id:'ev_'+Date.now(),organization_id:'orga_staging',date_updated:new Date().toISOString(),object_type:'opportunity',action:'updated'}});
   const timestamp=String(Math.floor(Date.now()/1000));
   const signature=createHmac('sha256',Buffer.from('ab'.repeat(32),'hex')).update(timestamp+body).digest('hex');
-  const send=(hash:string)=>fetch('http://127.0.0.1:3282/revenue/close-webhook',{method:'POST',headers:{'close-sig-hash':hash,'close-sig-timestamp':timestamp},body});
+  const send=(hash:string)=>fetch(siteUrl+'/revenue/close-webhook',{method:'POST',headers:{'close-sig-hash':hash,'close-sig-timestamp':timestamp},body});
   assert.equal((await send('00')).status,401);
   assert.equal((await send(signature)).status,200);
   assert.equal((await (await send(signature)).json()).duplicate,true);
-  assert.equal((await fetch('http://127.0.0.1:3282/revenue/realtime/status')).status,401);
+  assert.equal((await fetch(siteUrl+'/revenue/realtime/status')).status,401);
+  const replay={operation:'replay_event',eventId:'ev_existing'};
+  assert.equal((await fetch(siteUrl+'/revenue/realtime/configure',{method:'POST',body:JSON.stringify(replay)})).status,401);
+  assert.equal((await fetch(siteUrl+'/revenue/realtime/configure',{method:'POST',headers:{'x-activity-secret':'local-staging-only'},body:JSON.stringify(replay)})).status,400,'Off-mode replay must be blocked');
   // Fresh local run identity makes staging repeatable without changing capture.
   payload.mode='publish';
   payload.collectorRunId=crypto.randomUUID();payload.mondayAuditId=crypto.randomUUID();payload.evidenceId=payload.mondayAuditId;
@@ -73,7 +77,7 @@ async function main(){
   assert.equal(published.published,true);
   const after=await client.query(internal.revenue.allTimeRevenueInternal,{});
   const health=await client.query(internal.revenue.revenueHealthInternal,{});
-  const response=await fetch('http://127.0.0.1:3282/revenue/smiirl');
+  const response=await fetch(siteUrl+'/revenue/smiirl');
   assert.equal(response.headers.get('X-Revenue-Dataset'),after.snapshot!.datasetId);
   assert.deepEqual(await response.json(),{number:Math.round(expected.totalYtdUsd)});
   assert.equal(health.datasetId,after.snapshot!.datasetId);
