@@ -33,6 +33,7 @@ import type * as revenue from "../revenue.js";
 import type * as revenueEvidence from "../revenueEvidence.js";
 import type * as revenueIngestionErrors from "../revenueIngestionErrors.js";
 import type * as revenueMath from "../revenueMath.js";
+import type * as revenueReplay from "../revenueReplay.js";
 import type * as search from "../search.js";
 import type * as unifiedRevenue from "../unifiedRevenue.js";
 import type * as unifiedRevenueMath from "../unifiedRevenueMath.js";
@@ -70,6 +71,7 @@ declare const fullApi: ApiFromModules<{
   revenueEvidence: typeof revenueEvidence;
   revenueIngestionErrors: typeof revenueIngestionErrors;
   revenueMath: typeof revenueMath;
+  revenueReplay: typeof revenueReplay;
   search: typeof search;
   unifiedRevenue: typeof unifiedRevenue;
   unifiedRevenueMath: typeof unifiedRevenueMath;

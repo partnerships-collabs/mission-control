@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
 import {ingestionError,ingestionIdentity} from './revenueIngestionErrors';
+import {replayCloseEvent} from './revenueReplay';
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
@@ -29,6 +30,12 @@ for(const path of ['/revenue/reconciliation/chunk','/revenue/reconciliation/comp
     if(!checkActivityToken(req))return unauthorizedResponse();
     try{
       const body=await req.json();
+      if(path==='/revenue/realtime/configure'&&body?.operation==='replay_event'){
+        const state=await ctx.runQuery(internal.revenue.realtimeStatus,{});
+        const result=await replayCloseEvent(body,state,{closeKey:process.env.CLOSE_API_KEY,
+          signingKey:process.env.CLOSE_WEBHOOK_SIGNATURE_KEY,siteUrl:process.env.CONVEX_SITE_URL});
+        return new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+      }
       const result=path.endsWith('/chunk')?await ctx.runMutation(internal.revenue.evidenceChunk,body)
         :path.endsWith('/complete')?await ctx.runMutation(internal.revenue.evidenceComplete,body)
         :await ctx.runMutation(internal.revenue.configureRealtime,body);
