@@ -62,7 +62,7 @@ export const recordUnifiedRunInternal = internalMutation({
         if(args.evidenceId!==args.mondayAuditId)throw Error('evidence_audit_mismatch');
         const evidence=await readEvidence(ctx,args.evidenceId);
         const prior=realtime?.baselineId?await ctx.db.get(realtime.baselineId):null;
-        if(prior?.evidenceId){const previous=await readEvidence(ctx,prior.evidenceId);assertOverrideEvidenceStable(evidence.items,evidence.close,previous.close);}
+        if(prior?.evidenceId){const previous=await readEvidence(ctx,prior.evidenceId);assertOverrideEvidenceStable(evidence.items,evidence.close,previous.close,evidence.creatorAliases);}
         const rows=reconcileMonday(evidence.items,evidence.close,evidence.creatorAliases,args.snapshotDate);
         if(canonical(rows)!==canonical(chunks.flatMap(c=>c.rows))||canonical(deriveCloseDays(evidence.close,args.snapshotDate))!==canonical(args.closeDays))throw Error('reconciliation_parity_failed');
       }catch{result.issues.push('reconciliation_evidence_invalid');}

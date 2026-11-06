@@ -103,7 +103,7 @@ export const finishCloseRefresh=internalMutation({args:{lease:v.string(),version
   const baseline=await ctx.db.get(a.baselineId);
   if(!baseline?.verified||!baseline.evidenceId||!baseline.snapshot)throw Error('baseline_unavailable');
   const evidence=await readEvidence(ctx,baseline.evidenceId),date=chicagoDate();
-  assertOverrideEvidenceStable(evidence.items,a.facts,evidence.close);
+  assertOverrideEvidenceStable(evidence.items,a.facts,evidence.close,evidence.creatorAliases);
   const rows=reconcileMonday(evidence.items,a.facts,evidence.creatorAliases,date);
   const platformMonths=[...baseline.platformMonths];
   let month=platformMonths.at(-1)!.month;
