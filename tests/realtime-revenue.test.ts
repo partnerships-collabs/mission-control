@@ -192,3 +192,16 @@ test('midnight Central rolls YTD and appends a month without freshly dating affi
   assert.equal(r!.snapshot.monthly.months.at(-1)!.month,`${nextYear}-01`);assert.equal(r!.snapshot.refresh!.kind,'calendar');
   assert.equal(r!.snapshot.sourceHealth.impact.fetchedAt,base.sourceHealth.impact.fetchedAt);assert.equal(r!.healthy,false);
 });
+
+
+test('new wins for another creator do not invalidate reviewed payments for the same brand',()=>{
+  const reviewed=item({name:'Book Bolt x Charlie Chang',override:{matches:true,disposition:'included',references:['reviewed invoice']}});
+  const judd=fact({lead_name:'Book Bolt',note:'Book Bolt x Judd Albring',creators:['Judd Albring']});
+  assert.doesNotThrow(()=>assertOverrideEvidenceStable([reviewed],[judd],[]));
+  const charlie={...judd,note:'Book Bolt x Charlie Chang',creators:['Charlie Chang']};
+  assert.throws(()=>assertOverrideEvidenceStable([reviewed],[charlie],[]),/requires_review/);
+  assert.throws(()=>assertOverrideEvidenceStable([reviewed],[{...judd,note:'Book Bolt',creators:[]}],[]),/requires_review/);
+  const linked={...reviewed,override:{...reviewed.override,references:[judd.id]}};
+  assert.throws(()=>assertOverrideEvidenceStable([linked],[judd],[]),/requires_review/);
+  assert.throws(()=>assertOverrideEvidenceStable([reviewed],[{...judd,note:'Book Bolt x CC',creators:['CC']}],[],{cc:'charliechang'}),/requires_review/);
+});
