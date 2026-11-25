@@ -83,6 +83,45 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(result,again);self.assertEqual(calls,[1,2,3,2])
             self.assertEqual(len(p.value['entries']),3)
 
+    def test_impact_recovers_503_without_refetching_successful_months(self):
+        import all_time_revenue_collector as history
+        import revenue_month_history as months
+        from types import SimpleNamespace
+        bounds=[(date(2026,m,1),datetime(2026,m,28,tzinfo=timezone.utc)) for m in (1,2,3)]
+        calls=[]
+        response=Response(status_code=503);response.headers={}
+        error=RuntimeError('Controlled');error.response=response
+        def fetch(sid,key,end,**kwargs):
+            calls.append(end.month)
+            if end.month == 2 and calls.count(2) == 1:raise error
+            return end.month + 0.25
+        with tempfile.TemporaryDirectory() as directory:
+            v=capture()['payload'];p=Progress(Path(directory)/'p.json',v['collectorRunId'],v['collectorStartedAt'],'cutoff','manual','publish')
+            with patch.object(history,'calendar_months',return_value=bounds), patch.object(history.revenue,'fetch_impact_ytd',side_effect=fetch), patch.object(months.time,'sleep'):
+                result=history.fetch_monthly_history(SimpleNamespace(impact_sid='sid',impact_reporting_password='secret'),bounds[-1][1],'impact',p)
+                stamps={k:v['fetchedAt'] for k,v in p.value['entries'].items()}
+                again=history.fetch_monthly_history(SimpleNamespace(impact_sid='sid',impact_reporting_password='secret'),bounds[-1][1],'impact',p)
+            self.assertEqual(result,{'2026-01':1.25,'2026-02':2.25,'2026-03':3.25})
+            self.assertEqual(result,again)
+            self.assertEqual(calls,[1,2,3,2])
+            self.assertEqual(stamps,{k:v['fetchedAt'] for k,v in p.value['entries'].items()})
+            self.assertEqual(p.get('month:impact:2026-01-01:2026-01-28')['value'],1.25)
+
+    def test_month_recovery_preserves_failures_and_never_fills_with_zero(self):
+        import revenue_month_history as months
+        bounds=[(date(2026,m,1),datetime(2026,m,28,tzinfo=timezone.utc)) for m in (1,2)]
+        calls=[]
+        def fetch(start,end):
+            calls.append(start.month)
+            if start.month == 2:raise transport.requests.Timeout()
+            return 10.25
+        with self.assertRaises(transport.requests.Timeout):months.recover_months(bounds,fetch,'impact')
+        self.assertEqual(calls,[1,2,2,2])
+        transport.collection_deadline=0
+        request=Mock()
+        with self.assertRaises(transport.requests.Timeout):months.recover_months(bounds,request,'impact')
+        request.assert_not_called()
+
     def test_provider_retry_after_blocks_other_months_when_over_budget(self):
         bounds=[(date(2026,m,1),datetime(2026,m,28,tzinfo=timezone.utc)) for m in (1,2)]
         response=Response(status_code=429);response.headers={'Retry-After':'3600'}

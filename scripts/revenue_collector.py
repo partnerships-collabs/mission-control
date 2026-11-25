@@ -387,7 +387,7 @@ def fetch_impact_ytd(account_sid: str, auth_token: str, now: datetime, *, requir
         url,
         auth=(account_sid, auth_token),
         params={"START_DATE": start_date, "END_DATE": end_date, "PageSize": 1000},
-        timeout=30,
+        timeout=30, diagnostic=("impact", start_date, end_date),
     )
     response.raise_for_status()
     root = ET.fromstring(response.text)

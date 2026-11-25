@@ -131,8 +131,15 @@ def fetch_monthly_history(secrets, now, source, progress=None):
         if progress:
             progress.put(key, amount, revenue.utc_iso())
         return start.strftime('%Y-%m'), amount
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        values = dict(pool.map(month_total, calendar_months(HISTORY_START_YEAR, now)))
+    if source == 'impact':
+        # A transient failure in one historical month must not discard all other
+        # successful reports. Sequential calls also honor provider-wide backoff.
+        from revenue_month_history import recover_months
+        values = recover_months(list(calendar_months(HISTORY_START_YEAR, now)),
+                                lambda start, end: month_total((start, end))[1], source)
+    else:
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            values = dict(pool.map(month_total, calendar_months(HISTORY_START_YEAR, now)))
     if sum(values.values()) <= 0:
         raise revenue.ConnectorError('empty_data')
     return values
