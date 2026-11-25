@@ -33,3 +33,18 @@ scheduler unchanged. Before real-time activation require a fresh complete baseli
 independent shadow parity and the existing live activation/replay gates. A daily
 connector failure after activation must not prevent Close from refreshing against
 the previous verified affiliate baseline with its original timestamps/warnings.
+
+## Impact recovery (November 25)
+
+Impact can also return a transient HTTP 503 for one historical month. Its
+reports now use the same bounded failed-month recovery as AdsByMoney: initial
+full-month reads, then at most two passes over failed months only. Requests are
+sequential per provider, respect Retry-After and the original capture deadline,
+and retain original successful values and timestamps. Impact checkpoints remain
+in dollars; AdsByMoney checkpoints remain in cents. A permanent error or
+exhausted recovery still rejects the incomplete publication and retains the last
+verified total. Source/date/status diagnostics identify the affected Impact month.
+
+Close webhooks remain live and affiliate collection remains scheduled at noon
+America/Chicago. The JSON URL continues returning the exact rounded dollar total;
+SMIIRL must poll the `number` field and remain connected to receive changes.
